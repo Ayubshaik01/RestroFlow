@@ -28,10 +28,6 @@ interface Row {
   quantity: number;
 }
 
-// Keyed by item.id from the parent and only mounted once `existing` has
-// loaded — so `rows`'s initial state can come from a lazy useState
-// initializer (a pure, one-time read of already-available data) instead of
-// an effect + setState, same pattern as ModifierPickerDialog.
 function ComboRowsEditor({
   item,
   candidates,
@@ -78,13 +74,21 @@ function ComboRowsEditor({
     );
   };
 
+  const individualTotal = rows.reduce((sum, r) => {
+    const found = candidates.find((c) => c.id === r.componentItemId);
+    return sum + (found ? Number(found.price) * r.quantity : 0);
+  }, 0);
+  const comboPrice = Number(item.price || 0);
+  const savings = individualTotal - comboPrice;
+  const savingsPercent = individualTotal > 0 ? Math.round((savings / individualTotal) * 100) : 0;
+
   return (
     <>
       <div className="flex flex-col gap-3 py-2">
         {rows.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            No components yet — this item sells as a regular menu item. Add components to make it
-            a combo.
+            No components yet — this item sells as a regular menu item. Click &ldquo;Add component&rdquo; below to make it
+            a combo bundle.
           </p>
         )}
         {rows.map((row, index) => (
@@ -142,6 +146,25 @@ function ComboRowsEditor({
         >
           Add component
         </Button>
+
+        {rows.length > 0 && (
+          <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs mt-2">
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Combo Selling Price:</span>
+              <span className="font-semibold text-foreground">{formatCurrency(comboPrice)}</span>
+            </div>
+            <div className="flex justify-between items-center mt-1">
+              <span className="text-muted-foreground">Components Total Value:</span>
+              <span className="font-medium text-foreground">{formatCurrency(individualTotal)}</span>
+            </div>
+            {savings > 0 && (
+              <div className="flex justify-between items-center mt-1.5 text-emerald-600 font-semibold border-t border-border pt-1.5">
+                <span>Customer Savings:</span>
+                <span>{formatCurrency(savings)} ({savingsPercent}% off)</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <DialogFooter>
@@ -172,7 +195,10 @@ export function ComboComponentsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{item?.name} — combo components</DialogTitle>
+          <DialogTitle>{item?.name} — Combo Components</DialogTitle>
+          <p className="text-xs text-muted-foreground">
+            Configure the items included in this combo deal. Components are displayed on the KOT for kitchen prep while selling at the bundle price.
+          </p>
         </DialogHeader>
 
         {item && existing ? (
@@ -185,7 +211,9 @@ export function ComboComponentsDialog({
             onSaved={() => onOpenChange(false)}
           />
         ) : (
-          <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+          <div className="flex items-center justify-center py-10">
+            <span className="text-sm text-muted-foreground">Loading components…</span>
+          </div>
         )}
       </DialogContent>
     </Dialog>

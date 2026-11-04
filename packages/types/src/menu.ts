@@ -22,10 +22,10 @@ export type ModifierDto = z.infer<typeof modifierSchema>;
 
 export const modifierGroupSchema = z.object({
   name: z.string().min(1),
-  minSelect: z.number().int().min(0).default(0),
-  maxSelect: z.number().int().min(1).default(1),
+  minSelect: z.number().int().nonnegative().default(0),
+  maxSelect: z.number().int().positive().default(1),
   isRequired: z.boolean().default(false),
-  modifiers: z.array(modifierSchema).default([]),
+  modifiers: z.array(modifierSchema),
 });
 export type ModifierGroupDto = z.infer<typeof modifierGroupSchema>;
 
@@ -54,6 +54,7 @@ export const menuItemSchema = z.object({
   availableTo: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   barcode: z.string().optional(),
   isActive: z.boolean().default(true),
+  isCombo: z.boolean().default(false).optional(),
   modifierGroupIds: z.array(z.string()).default([]),
 });
 export type MenuItemDto = z.infer<typeof menuItemSchema>;

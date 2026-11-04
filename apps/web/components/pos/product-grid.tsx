@@ -89,9 +89,16 @@ export function ProductGrid({
             onClick={() => onSelect(item)}
             className="flex min-h-24 flex-col items-start gap-2 rounded-2xl border border-border bg-card p-3 text-left sm:p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.97] active:translate-y-0 lg:min-h-32 lg:justify-between lg:p-4 lg:hover:border-primary/50"
           >
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${item.isVeg ? "bg-success" : "bg-destructive"}`}
-            />
+            <div className="flex w-full items-center justify-between">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${item.isVeg ? "bg-success" : "bg-destructive"}`}
+              />
+              {item.isCombo && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                  Combo
+                </span>
+              )}
+            </div>
             <span className="text-sm font-medium leading-tight text-foreground lg:text-[15px]">{item.name}</span>
             <span className="flex w-full items-baseline justify-between gap-2">
               <span className="text-sm font-semibold tabular-nums text-foreground lg:text-base">

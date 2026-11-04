@@ -27,6 +27,7 @@ export async function PATCH(
   if (body.categoryId !== undefined) updates.category_id = body.categoryId;
   if (body.stationId !== undefined) updates.kitchen_station_id = body.stationId;
   if (body.imageUrl !== undefined) updates.image_url = body.imageUrl;
+  if (body.isCombo !== undefined) updates.is_combo = body.isCombo;
 
   const { data, error } = await admin
     .from("menu_items")

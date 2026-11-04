@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerSessionUser } from "@/lib/auth/server-session";
+import { isItemInComboStore } from "@/lib/combos/combo-service";
 
 export async function GET(req: Request) {
   const user = await getServerSessionUser();
@@ -28,6 +29,7 @@ export async function GET(req: Request) {
       tax_rate_percent,
       is_veg,
       is_available,
+      is_combo,
       sort_order,
       category:category_id (id, name),
       station:kitchen_station_id (id, name)
@@ -187,7 +189,7 @@ export async function GET(req: Request) {
     taxRatePercent: String(i.tax_rate_percent),
     isVeg: i.is_veg,
     isActive: i.is_available,
-    isCombo: false,
+    isCombo: Boolean(i.is_combo || isItemInComboStore(i.id)),
     category: i.category || { id: i.category_id, name: "General" },
     station: i.station || null,
     modifierGroups: [],
@@ -219,6 +221,7 @@ export async function POST(req: Request) {
       tax_rate_percent: body.taxRatePercent || 5.0,
       is_veg: body.isVeg !== undefined ? body.isVeg : false,
       is_available: body.isActive !== undefined ? body.isActive : true,
+      is_combo: body.isCombo !== undefined ? Boolean(body.isCombo) : false,
       image_url: body.imageUrl || null,
     })
     .select()

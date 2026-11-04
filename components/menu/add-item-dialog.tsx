@@ -46,6 +46,7 @@ export function AddItemDialog({
   const [halfPrice, setHalfPrice] = useState("");
   const [taxRatePercent, setTaxRatePercent] = useState("5");
   const [isVeg, setIsVeg] = useState(true);
+  const [isCombo, setIsCombo] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   const [imagePreview, setImagePreview] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +65,7 @@ export function AddItemDialog({
     setPrice("");
     setTaxRatePercent("5");
     setIsVeg(true);
+    setIsCombo(false);
     setImageUrl(undefined);
     setImagePreview(undefined);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -97,6 +99,7 @@ export function AddItemDialog({
         halfPrice: halfPrice.trim() === "" ? undefined : Number(halfPrice),
         taxRatePercent: Number(taxRatePercent),
         isVeg,
+        isCombo,
         isVegan: false,
         isJain: false,
         isHalal: false,
@@ -275,6 +278,18 @@ export function AddItemDialog({
               Vegetarian
             </Label>
             <Switch id="is-veg" checked={isVeg} onCheckedChange={setIsVeg} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+            <div>
+              <Label htmlFor="is-combo" className="cursor-pointer font-medium block">
+                Combo Item / Meal Deal
+              </Label>
+              <span className="text-xs text-muted-foreground block">
+                Bundle product containing multiple component items
+              </span>
+            </div>
+            <Switch id="is-combo" checked={isCombo} onCheckedChange={setIsCombo} />
           </div>
 
           <DialogFooter>
