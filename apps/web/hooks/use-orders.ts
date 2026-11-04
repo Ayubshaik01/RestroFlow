@@ -71,6 +71,7 @@ export interface BillPreview {
   totalDue: number;
   amountPaid: number;
   balanceDue: number;
+  items?: any[];
 }
 
 export type BillAdjustments = Pick<

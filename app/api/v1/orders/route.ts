@@ -35,7 +35,7 @@ export async function GET(req: Request) {
       created_at,
       tables:table_id (id, number, name),
       customers:customer_id (id, name, phone),
-      order_items (id, name_snapshot, quantity, unit_price_snapshot, line_total, status)
+      order_items (id, name_snapshot, quantity, unit_price_snapshot, line_total, status, menu_items:menu_item_id (id, name))
     `,
     )
     .eq("branch_id", branchId)
@@ -69,13 +69,19 @@ export async function GET(req: Request) {
     createdAt: o.created_at,
     table: o.tables ? { id: o.tables.id, number: o.tables.number, name: o.tables.name } : null,
     customer: o.customers ? { id: o.customers.id, name: o.customers.name, phone: o.customers.phone } : null,
-    items: (o.order_items || []).map((i: any) => ({
-      id: i.id,
-      nameSnapshot: i.name_snapshot,
-      quantity: i.quantity,
-      unitPriceSnapshot: String(i.unit_price_snapshot),
-      lineTotal: String(i.line_total),
-    })),
+    items: (o.order_items || []).map((i: any) => {
+      const dbMenuItem = Array.isArray(i.menu_items) ? i.menu_items[0] : i.menu_items;
+      const realName = (i.name_snapshot && i.name_snapshot !== "Item" && i.name_snapshot.trim().length > 0)
+        ? i.name_snapshot
+        : dbMenuItem?.name || i.name_snapshot || "Item";
+      return {
+        id: i.id,
+        nameSnapshot: realName,
+        quantity: i.quantity,
+        unitPriceSnapshot: String(i.unit_price_snapshot),
+        lineTotal: String(i.line_total),
+      };
+    }),
   }));
 
   return NextResponse.json(formatted);

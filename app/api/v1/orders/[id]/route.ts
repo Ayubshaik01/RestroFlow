@@ -47,22 +47,31 @@ function formatOrderDetail(order: any) {
           phone: customerData.phone || null,
         }
       : null,
-    items: (order.order_items || []).map((i: any) => ({
-      id: i.id,
-      menuItemId: i.menu_item_id || "",
-      nameSnapshot: i.name_snapshot,
-      quantity: i.quantity,
-      unitPriceSnapshot: String(i.unit_price_snapshot || "0.00"),
-      lineTotal: String(i.line_total || "0.00"),
-      taxRateSnapshot: String(i.tax_rate_snapshot || "0.00"),
-      kitchenNote: i.notes || null,
-      modifiers: (i.order_item_modifiers || []).map((m: any) => ({
-        id: m.id,
-        name: m.name_snapshot,
-        priceAdjustment: String(m.price_adj_snapshot || "0.00"),
-      })),
-      status: i.status || "PENDING",
-    })),
+    items: (order.order_items || []).map((i: any) => {
+      const dbMenuItem = Array.isArray(i.menu_items) ? i.menu_items[0] : i.menu_items;
+      const realName =
+        i.name_snapshot && i.name_snapshot !== "Item" && i.name_snapshot.trim().length > 0
+          ? i.name_snapshot
+          : dbMenuItem?.name || i.name_snapshot || "Item";
+
+      return {
+        id: i.id,
+        menuItemId: i.menu_item_id || "",
+        nameSnapshot: realName,
+        quantity: i.quantity,
+        unitPriceSnapshot: String(i.unit_price_snapshot || "0.00"),
+        lineTotal: String(i.line_total || "0.00"),
+        taxRateSnapshot: String(i.tax_rate_snapshot || "0.00"),
+        kitchenNote: i.notes || null,
+        modifiers: (i.order_item_modifiers || []).map((m: any) => ({
+          id: m.id,
+          name: m.name_snapshot,
+          nameSnapshot: m.name_snapshot,
+          priceAdjustment: String(m.price_adj_snapshot || "0.00"),
+        })),
+        status: i.status || "PENDING",
+      };
+    }),
     kots: (order.kots || []).map((k: any) => ({
       id: k.id,
       kotNumber: k.kot_number,
@@ -118,7 +127,7 @@ async function fetchFullOrder(admin: any, id: string) {
       created_at,
       tables:table_id (id, number, name),
       customers:customer_id (id, name, phone),
-      order_items (id, menu_item_id, name_snapshot, quantity, unit_price_snapshot, line_total, tax_rate_snapshot, notes, status, order_item_modifiers (id, name_snapshot, price_adj_snapshot)),
+      order_items (id, menu_item_id, name_snapshot, quantity, unit_price_snapshot, line_total, tax_rate_snapshot, notes, status, menu_items:menu_item_id (id, name), order_item_modifiers (id, name_snapshot, price_adj_snapshot)),
       kots (id, kot_number, round_number, status, printed_count, reject_reason, created_at),
       payments (id, method, amount, tendered, change_given, reference, created_at)
     `,

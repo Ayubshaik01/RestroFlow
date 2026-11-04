@@ -31,7 +31,7 @@ export async function POST(
       delivery_fee,
       discount_amount,
       discount_percent,
-      order_items (id, menu_item_id, quantity, unit_price_snapshot, line_total, tax_rate_snapshot, is_half_portion),
+      order_items (id, menu_item_id, name_snapshot, quantity, unit_price_snapshot, line_total, tax_rate_snapshot, is_half_portion, menu_items:menu_item_id (name)),
       payments (amount)
     `,
     )
@@ -152,5 +152,19 @@ export async function POST(
     totalDue: bill.totalDue,
     amountPaid: round2(amountPaid),
     balanceDue: round2(balanceDue),
+    items: items.map((i: any) => {
+      const dbMenuItem = Array.isArray(i.menu_items) ? i.menu_items[0] : i.menu_items;
+      const realName = (i.name_snapshot && i.name_snapshot !== "Item" && i.name_snapshot.trim().length > 0)
+        ? i.name_snapshot
+        : dbMenuItem?.name || i.name_snapshot || "Item";
+      return {
+        id: i.id,
+        name: realName,
+        nameSnapshot: realName,
+        quantity: i.quantity,
+        unitPrice: Number(i.unit_price_snapshot || 0),
+        lineTotal: Number(i.line_total || 0),
+      };
+    }),
   });
 }

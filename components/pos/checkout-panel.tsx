@@ -353,6 +353,7 @@ export function CheckoutPanel({
   }
 
   const kitchen = live ? kitchenProgress(live.kots.map((k) => k.status)) : null;
+  const displayItems: any[] = live?.items && live.items.length > 0 ? live.items : ((bill as any)?.items || []);
   const paidSoFar = live?.payments ?? [];
   const partialLabel = `Record partial payment · ${formatCurrency(plan.applied)}`;
 
@@ -441,6 +442,52 @@ export function CheckoutPanel({
           </p>
         )}
       </div>
+
+      {/* Ordered Items Breakdown */}
+      {displayItems.length > 0 && (
+        <div className="rounded-xl border border-border bg-card/60 p-3.5 shadow-xs">
+          <div className="flex items-center justify-between pb-2 border-b border-border/70">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Order Items ({displayItems.reduce((sum: number, item: any) => sum + Number(item.quantity || 1), 0)})
+            </span>
+            <span className="text-xs font-semibold tabular-nums text-foreground">
+              {formatCurrency(displayItems.reduce((sum: number, item: any) => sum + Number(item.lineTotal || 0), 0))}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-col divide-y divide-border/40 max-h-56 overflow-y-auto pr-1">
+            {displayItems.map((item: any) => (
+              <div key={item.id} className="flex items-start justify-between py-2 text-sm gap-2">
+                <div className="flex flex-col min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 font-medium text-foreground">
+                    <span className="font-semibold text-primary">{item.quantity}×</span>
+                    <span className="truncate">{item.nameSnapshot || item.name}</span>
+                  </div>
+                  {item.modifiers && item.modifiers.length > 0 && (
+                    <span className="text-xs text-muted-foreground pl-4">
+                      +{(item.modifiers as any[]).map((m: any) => m.name || m.nameSnapshot).filter(Boolean).join(", ")}
+                    </span>
+                  )}
+                  {item.kitchenNote && (
+                    <span className="text-xs italic text-muted-foreground pl-4">
+                      Note: {item.kitchenNote}
+                    </span>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="font-medium tabular-nums text-foreground">
+                    {formatCurrency(Number(item.lineTotal || 0))}
+                  </span>
+                  {item.quantity > 1 && (
+                    <div className="text-[11px] text-muted-foreground tabular-nums">
+                      {formatCurrency(Number(item.unitPriceSnapshot || item.unitPrice || 0))} ea
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {paidSoFar.length > 0 && (
         <div className="rounded-xl border border-border px-3 py-2">
