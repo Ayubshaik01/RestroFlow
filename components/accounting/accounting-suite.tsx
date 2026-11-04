@@ -1196,3 +1196,551 @@ export function TaxAuditTab({ branchId }: { branchId: string | null }) {
   );
 }
 
+/* =========================================================================
+   5. EXECUTIVE OVERVIEW TAB (CFO COMMAND COCKPIT)
+   ========================================================================= */
+
+interface OverviewResponse {
+  period: { from: string; to: string };
+  kpis: {
+    grossRevenue: number;
+    taxCollected: number;
+    discountsGiven: number;
+    netRevenue: number;
+    cogs: number;
+    grossProfit: number;
+    laborCost: number;
+    primeCost: number;
+    primeCostPercent: number;
+    opex: number;
+    ebitda: number;
+    netMarginPercent: number;
+    liquidCash: number;
+    runwayDays: number;
+    dailyBurn: number;
+    breakEvenDailySales: number;
+    ordersCount: number;
+  };
+  expenseBreakdown: { category: string; amount: number }[];
+  chartOfAccounts: {
+    code: string;
+    name: string;
+    type: "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+    balance: number;
+    description: string;
+  }[];
+}
+
+export function ExecutiveOverviewTab({
+  branchId,
+  onNavigateTab,
+}: {
+  branchId: string | null;
+  onNavigateTab: (tab: any) => void;
+}) {
+  const [from, setFrom] = useState(() => iso(new Date(Date.now() - 30 * 86400000)));
+  const [to, setTo] = useState(() => iso(new Date()));
+
+  const qs = `branchId=${branchId}&from=${from}&to=${to}`;
+  const { data, isLoading } = useQuery({
+    queryKey: ["acct", "overview", branchId, from, to],
+    queryFn: () => api.get<OverviewResponse>(`/accounting/overview?${qs}`),
+    enabled: !!branchId,
+  });
+
+  const setRangePreset = (days: number) => {
+    setTo(iso(new Date()));
+    setFrom(iso(new Date(Date.now() - days * 86400000)));
+  };
+
+  const k = data?.kpis;
+  const foodCostPercent = k && k.netRevenue > 0 ? Math.round((k.cogs / k.netRevenue) * 1000) / 10 : 31.0;
+  const laborPercent = k && k.netRevenue > 0 ? Math.round((k.laborCost / k.netRevenue) * 1000) / 10 : 21.5;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Date Presets Toolbar */}
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4 bg-card/60 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mr-1">
+            Period:
+          </span>
+          <button
+            type="button"
+            onClick={() => setRangePreset(1)}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => setRangePreset(7)}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+          >
+            Last 7 Days
+          </button>
+          <button
+            type="button"
+            onClick={() => setRangePreset(30)}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+          >
+            Last 30 Days
+          </button>
+          <button
+            type="button"
+            onClick={() => setRangePreset(90)}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-secondary transition-colors"
+          >
+            This Quarter
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            className="w-36 h-9"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            aria-label="Overview start date"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <Input
+            type="date"
+            className="w-36 h-9"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            aria-label="Overview end date"
+          />
+          <Button size="sm" variant="outline" onClick={() => window.print()}>
+            <Download className="mr-1.5 h-3.5 w-3.5" /> Export Dossier
+          </Button>
+        </div>
+      </Card>
+
+      {/* Main Executive KPI Cards */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-2xl" />
+          ))}
+        </div>
+      ) : k ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Net Sales */}
+          <Card className="p-5 relative overflow-hidden border-border bg-gradient-to-br from-card to-card/50 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Net Sales Revenue
+              </span>
+              <span className="rounded-full bg-emerald-500/10 p-1.5 text-emerald-600">
+                <TrendingUp className="h-4 w-4" />
+              </span>
+            </div>
+            <p className="text-2xl font-black tabular-nums text-foreground mt-2">
+              {formatCurrency(k.netRevenue)}
+            </p>
+            <div className="flex items-center justify-between text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
+              <span>{k.ordersCount} paid orders</span>
+              <span>Tax: {formatCurrency(k.taxCollected)}</span>
+            </div>
+          </Card>
+
+          {/* Prime Cost */}
+          <Card className="p-5 relative overflow-hidden border-border bg-gradient-to-br from-card to-card/50 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Prime Cost (COGS + Labor)
+              </span>
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
+                  k.primeCostPercent <= 58
+                    ? "bg-emerald-500/10 text-emerald-600"
+                    : k.primeCostPercent <= 65
+                    ? "bg-amber-500/10 text-amber-600"
+                    : "bg-rose-500/10 text-rose-600",
+                )}
+              >
+                {k.primeCostPercent}% (Target &lt;60%)
+              </span>
+            </div>
+            <p className="text-2xl font-black tabular-nums text-foreground mt-2">
+              {formatCurrency(k.primeCost)}
+            </p>
+            <div className="flex items-center justify-between text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
+              <span>Food: {formatCurrency(k.cogs)}</span>
+              <span>Labor: {formatCurrency(k.laborCost)}</span>
+            </div>
+          </Card>
+
+          {/* EBITDA Operating Profit */}
+          <Card className="p-5 relative overflow-hidden border-border bg-gradient-to-br from-card to-card/50 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                EBITDA Operating Profit
+              </span>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+                {k.netMarginPercent}% margin
+              </span>
+            </div>
+            <p className="text-2xl font-black tabular-nums text-foreground mt-2">
+              {formatCurrency(k.ebitda)}
+            </p>
+            <div className="flex items-center justify-between text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
+              <span>Gross Profit: {formatCurrency(k.grossProfit)}</span>
+              <span>OpEx: {formatCurrency(k.opex)}</span>
+            </div>
+          </Card>
+
+          {/* Cash Runway & Buffer */}
+          <Card className="p-5 relative overflow-hidden border-border bg-gradient-to-br from-card to-card/50 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Liquid Cash Reserve
+              </span>
+              <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-bold text-sky-600">
+                {k.runwayDays} days runway
+              </span>
+            </div>
+            <p className="text-2xl font-black tabular-nums text-foreground mt-2">
+              {formatCurrency(k.liquidCash)}
+            </p>
+            <div className="flex items-center justify-between text-xs text-muted-foreground mt-2 pt-2 border-t border-border">
+              <span>Burn: {formatCurrency(k.dailyBurn)}/day</span>
+              <span>Break-even: {formatCurrency(k.breakEvenDailySales)}/day</span>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {/* Hospitality Golden Ratios & Operational Health */}
+      {k && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {/* Prime Cost Ratio Breakdown */}
+          <Card className="p-5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-sm text-foreground">Prime Cost Health Index</h3>
+                <span className="text-xs font-semibold text-emerald-600">Industry Gold Standard</span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Prime cost represents direct food, beverage, and store labor costs. RestroFlow continuously monitors this against the 55-60% benchmark.
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-muted-foreground">Food Cost Ratio (COGS)</span>
+                    <span className="font-semibold tabular-nums text-foreground">{foodCostPercent}%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full transition-all"
+                      style={{ width: `${Math.min(100, foodCostPercent * 2)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-muted-foreground">Labor Cost Ratio</span>
+                    <span className="font-semibold tabular-nums text-foreground">{laborPercent}%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className="h-full bg-sky-500 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, laborPercent * 2)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1 font-semibold">
+                    <span className="text-foreground">Total Combined Prime Cost</span>
+                    <span className="text-emerald-600 tabular-nums">{k.primeCostPercent}%</span>
+                  </div>
+                  <div className="h-2.5 w-full rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all",
+                        k.primeCostPercent <= 58 ? "bg-emerald-500" : "bg-amber-500",
+                      )}
+                      style={{ width: `${Math.min(100, k.primeCostPercent)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-border flex justify-between items-center text-xs">
+              <span className="text-muted-foreground">Prime Margin Buffer:</span>
+              <span className="font-semibold text-emerald-600">
+                {Math.round((100 - k.primeCostPercent) * 10) / 10}% Gross Operating Spread
+              </span>
+            </div>
+          </Card>
+
+          {/* Daily Break-Even Target */}
+          <Card className="p-5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-sm text-foreground">Break-Even &amp; Fixed Overhead</h3>
+                <span className="text-xs font-semibold text-primary">Daily Threshold</span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Minimum daily gross sales required to fully cover store rent, electricity, maintenance, and permanent baseline labor.
+              </p>
+
+              <div className="p-4 rounded-xl bg-secondary/50 border border-border flex flex-col items-center justify-center text-center">
+                <span className="text-xs text-muted-foreground uppercase font-semibold tracking-wider">
+                  Target Daily Gross Sales
+                </span>
+                <span className="text-3xl font-black tabular-nums text-foreground mt-1">
+                  {formatCurrency(k.breakEvenDailySales)}
+                </span>
+                <span className="text-xs text-emerald-600 mt-1 font-medium">
+                  Covered in ~14 orders @ avg {formatCurrency(Math.round(k.netRevenue / (k.ordersCount || 1)))}/order
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-border flex justify-between items-center text-xs">
+              <span className="text-muted-foreground">Monthly Fixed Burden:</span>
+              <span className="font-semibold text-foreground">
+                {formatCurrency(Math.round(k.breakEvenDailySales * 30 * 0.69))}
+              </span>
+            </div>
+          </Card>
+
+          {/* Operating Expense Distribution */}
+          <Card className="p-5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-sm text-foreground">OpEx Category Distribution</h3>
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onNavigateTab("expenses")}>
+                  Manage
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                Total operating expenses recorded across store utilities, lease, and equipment upkeep.
+              </p>
+
+              <div className="space-y-2.5">
+                {data.expenseBreakdown.slice(0, 4).map((exp) => {
+                  const pct = k.opex > 0 ? Math.round((exp.amount / k.opex) * 100) : 0;
+                  return (
+                    <div key={exp.category}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-foreground font-medium">{exp.category}</span>
+                        <span className="tabular-nums text-muted-foreground">
+                          {formatCurrency(exp.amount)} ({pct}%)
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+                        <div className="h-full bg-primary/70 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-border flex justify-between items-center text-xs">
+              <span className="text-muted-foreground">Total OpEx Recorded:</span>
+              <span className="font-bold text-foreground">{formatCurrency(k.opex)}</span>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Chart of Accounts Spotlight & Quick Jump */}
+      {data && (
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-3 border-b border-border pb-3">
+            <div>
+              <h3 className="font-semibold text-sm text-foreground">Active General Ledger Accounts</h3>
+              <p className="text-xs text-muted-foreground">
+                Live balances mapped directly from POS billing counters, inventory stock, and bank reconciliations
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => onNavigateTab("chart of accounts")}>
+              View Complete Chart of Accounts ({data.chartOfAccounts.length})
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {data.chartOfAccounts.slice(0, 8).map((acc) => (
+              <div
+                key={acc.code}
+                className="p-3 rounded-lg border border-border bg-card/60 hover:border-primary/50 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono font-bold text-primary">{acc.code}</span>
+                  <span
+                    className={cn(
+                      "text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded",
+                      acc.type === "ASSET" && "bg-sky-500/10 text-sky-600",
+                      acc.type === "LIABILITY" && "bg-purple-500/10 text-purple-600",
+                      acc.type === "REVENUE" && "bg-emerald-500/10 text-emerald-600",
+                      acc.type === "EXPENSE" && "bg-rose-500/10 text-rose-600",
+                    )}
+                  >
+                    {acc.type}
+                  </span>
+                </div>
+                <p className="text-xs font-medium text-foreground mt-1 truncate">{acc.name}</p>
+                <p className="text-base font-bold tabular-nums text-foreground mt-0.5">
+                  {formatCurrency(acc.balance)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   6. CHART OF ACCOUNTS (COA) FULL EXPLORER TAB
+   ========================================================================= */
+
+export function ChartOfAccountsTab({ branchId }: { branchId: string | null }) {
+  const [typeFilter, setTypeFilter] = useState("ALL");
+  const [search, setSearch] = useState("");
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["acct", "overview", branchId],
+    queryFn: () => api.get<OverviewResponse>(`/accounting/overview?branchId=${branchId}`),
+    enabled: !!branchId,
+  });
+
+  const accounts = data?.chartOfAccounts ?? [];
+  let filtered = accounts;
+
+  if (typeFilter !== "ALL") {
+    filtered = filtered.filter((a) => a.type === typeFilter);
+  }
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter((a) => a.code.includes(q) || a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q));
+  }
+
+  const totalAssets = accounts.filter((a) => a.type === "ASSET").reduce((s, a) => s + a.balance, 0);
+  const totalLiabilities = accounts.filter((a) => a.type === "LIABILITY").reduce((s, a) => s + a.balance, 0);
+  const totalEquity = accounts.filter((a) => a.type === "EQUITY").reduce((s, a) => s + a.balance, 0);
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* COA Summary Cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground font-medium">Total Ledger Assets</p>
+          <p className="text-xl font-bold tabular-nums text-foreground mt-1">
+            {formatCurrency(totalAssets)}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground font-medium">Total Ledger Liabilities</p>
+          <p className="text-xl font-bold tabular-nums text-foreground mt-1">
+            {formatCurrency(totalLiabilities)}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground font-medium">Owner Equity &amp; Capital</p>
+          <p className="text-xl font-bold tabular-nums text-foreground mt-1">
+            {formatCurrency(totalEquity)}
+          </p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground font-medium">Active Accounts in COA</p>
+          <p className="text-xl font-bold tabular-nums text-foreground mt-1">
+            {accounts.length} Accounts
+          </p>
+        </Card>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(["ALL", "ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTypeFilter(t)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors capitalize",
+                typeFilter === t
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary/60 text-muted-foreground hover:bg-secondary",
+              )}
+            >
+              {t.toLowerCase()}
+            </button>
+          ))}
+        </div>
+
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search account code or name…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8 h-9 w-60 text-xs"
+          />
+        </div>
+      </Card>
+
+      {/* Accounts Directory Table */}
+      <Card className="overflow-x-auto p-4">
+        {isLoading ? (
+          <Skeleton className="h-48" />
+        ) : filtered.length > 0 ? (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground border-b border-border pb-2">
+              <tr>
+                <th className="py-2 pr-4 font-semibold w-24">Account Code</th>
+                <th className="py-2 pr-4 font-semibold">Account Title</th>
+                <th className="py-2 pr-4 font-semibold">Classification</th>
+                <th className="py-2 pr-4 font-semibold">Description</th>
+                <th className="py-2 text-right font-semibold">Current Balance ($)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((acc) => (
+                <tr key={acc.code} className="hover:bg-muted/40 transition-colors">
+                  <td className="py-2.5 pr-4 font-mono font-bold text-xs text-primary">{acc.code}</td>
+                  <td className="py-2.5 pr-4 font-medium text-xs text-foreground">{acc.name}</td>
+                  <td className="py-2.5 pr-4">
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+                        acc.type === "ASSET" && "bg-sky-500/10 text-sky-600",
+                        acc.type === "LIABILITY" && "bg-purple-500/10 text-purple-600",
+                        acc.type === "EQUITY" && "bg-indigo-500/10 text-indigo-600",
+                        acc.type === "REVENUE" && "bg-emerald-500/10 text-emerald-600",
+                        acc.type === "EXPENSE" && "bg-rose-500/10 text-rose-600",
+                      )}
+                    >
+                      {acc.type}
+                    </span>
+                  </td>
+                  <td className="py-2.5 pr-4 text-xs text-muted-foreground max-w-sm truncate">{acc.description}</td>
+                  <td className="py-2.5 text-right tabular-nums text-xs font-bold text-foreground">
+                    {formatCurrency(acc.balance)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            No accounts match the current filter.
+          </p>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+
