@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerSessionUser } from "@/lib/auth/server-session";
 import { computeBill, settlePayments, round2 } from "@/lib/orders/settlement";
+import { priceLine, toEffectiveInclusiveUnitPrice } from "@/lib/orders/pricing";
 
 export async function POST(
   req: Request,
@@ -30,7 +31,7 @@ export async function POST(
         status,
         subtotal,
         delivery_fee,
-        order_items (id, menu_item_id, quantity, line_total, tax_rate_snapshot),
+        order_items (id, menu_item_id, quantity, unit_price_snapshot, line_total, tax_rate_snapshot, is_half_portion),
         payments (id, amount)
       `,
       )
@@ -45,18 +46,87 @@ export async function POST(
       return NextResponse.json({ message: "Order is already paid" }, { status: 400 });
     }
 
+    // Self-heal: If any order items were created with 0 line_total, fetch their prices from menu_items
+    const items = order.order_items || [];
+    const zeroPriceItems = items.filter((i: any) => Number(i.line_total || 0) <= 0 && i.menu_item_id);
+
+    if (zeroPriceItems.length > 0) {
+      const itemIds = zeroPriceItems.map((i: any) => i.menu_item_id);
+      const { data: dbMenuItems } = await admin
+        .from("menu_items")
+        .select("id, price, half_price, tax_rate_percent")
+        .in("id", itemIds);
+
+      const priceMap = new Map((dbMenuItems || []).map((m: any) => [m.id, m]));
+
+      for (const item of zeroPriceItems) {
+        const db = priceMap.get(item.menu_item_id);
+        if (db) {
+          const raw = item.is_half_portion && db.half_price ? Number(db.half_price) : Number(db.price);
+          const taxRate = Number(db.tax_rate_percent || item.tax_rate_snapshot || 5);
+          const unit = toEffectiveInclusiveUnitPrice(raw, taxRate, "INCLUSIVE");
+          const priced = priceLine({
+            quantity: item.quantity || 1,
+            unitPriceInclusive: unit,
+            taxRatePercent: taxRate,
+          });
+
+          item.line_total = priced.lineTotal;
+          item.unit_price_snapshot = unit;
+          item.tax_rate_snapshot = taxRate;
+
+          await admin
+            .from("order_items")
+            .update({
+              line_total: priced.lineTotal,
+              unit_price_snapshot: unit,
+              tax_rate_snapshot: taxRate,
+            })
+            .eq("id", item.id);
+        }
+      }
+    }
+
+    // Handle coupon validation if provided
+    let couponDiscountPercent = 0;
+    let couponDiscountFlat = 0;
+    let appliedCouponCode: string | null = null;
+
+    if (body.couponCode && typeof body.couponCode === "string" && body.couponCode.trim()) {
+      const code = body.couponCode.trim();
+      const { data: coupon } = await admin
+        .from("coupons")
+        .select("code, type, value, min_order_amount, max_discount, is_active")
+        .eq("branch_id", order.branch_id)
+        .ilike("code", code)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (coupon) {
+        appliedCouponCode = coupon.code;
+        if (coupon.type === "PERCENT") {
+          couponDiscountPercent = Number(coupon.value);
+        } else {
+          couponDiscountFlat = Number(coupon.value);
+        }
+      }
+    }
+
     // 2. Compute bill
-    const lines = (order.order_items || []).map((i: any) => {
+    const lines = items.map((i: any) => {
       const lineTotal = Number(i.line_total);
       const taxRate = Number(i.tax_rate_snapshot || 0);
       const taxAmount = taxRate > 0 ? round2(lineTotal - lineTotal / (1 + taxRate / 100)) : 0;
       return { lineTotal, taxAmount };
     });
 
+    const manualDiscountPercent = Number(body.discountPercent || 0);
+    const totalDiscountPercent = manualDiscountPercent + couponDiscountPercent;
+
     const bill = computeBill({
       lines,
-      discountPercent: Number(body.discountPercent || 0),
-      discountFlat: 0,
+      discountPercent: totalDiscountPercent,
+      discountFlat: couponDiscountFlat,
       tip: Number(body.tipAmount || 0),
       deliveryFee: Number(order.delivery_fee || 0),
       loyaltyDiscountRequested: Number(body.loyaltyPointsToRedeem || 0),
@@ -101,6 +171,7 @@ export async function POST(
         subtotal: bill.subtotal,
         discount_amount: bill.discountAmount,
         discount_percent: bill.discountPercent,
+        coupon_code: appliedCouponCode,
         tax_amount: bill.taxAmount,
         tip_amount: bill.tipAmount,
         loyalty_points_redeemed: Number(body.loyaltyPointsToRedeem || 0),
@@ -140,11 +211,12 @@ export async function POST(
       status: updatedOrder.status,
       settlement: {
         amountDue: bill.totalDue,
-        amountPaid: totalPaidAcrossAll,
-        balanceDue: Math.max(round2(bill.totalDue - totalPaidAcrossAll), 0),
+        amountPaid: settlement.paidNow,
+        balanceDue: settlement.balanceAfter,
         changeDue: settlement.changeDue,
         fullyPaid,
       },
+      payments: settlement.payments,
     });
   } catch (error: any) {
     console.error("Checkout error:", error);
@@ -154,4 +226,3 @@ export async function POST(
     );
   }
 }
-

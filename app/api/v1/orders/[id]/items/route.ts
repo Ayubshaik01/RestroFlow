@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerSessionUser } from "@/lib/auth/server-session";
-import { priceLine, toEffectiveInclusiveUnitPrice } from "@/lib/orders/pricing";
+import { priceLine, round2, toEffectiveInclusiveUnitPrice } from "@/lib/orders/pricing";
 
 export async function POST(
   req: Request,
@@ -45,52 +45,113 @@ export async function POST(
       return NextResponse.json({ message: "No items provided" }, { status: 400 });
     }
 
-    // 3. Fetch menu items to price correctly
+    // 3. Fetch menu items and modifier options from DB
     const itemIds = lineInputs.map((i: any) => i.menuItemId || i.id).filter(Boolean);
-    const { data: menuItems } = await admin
-      .from("menu_items")
-      .select("id, name, price, tax_rate_percent, half_price")
-      .in("id", itemIds);
+    const allModIds = lineInputs.flatMap((i: any) => i.modifierIds || []).filter(Boolean);
 
+    const { data: menuItems } = itemIds.length > 0
+      ? await admin
+          .from("menu_items")
+          .select("id, name, price, tax_rate_percent, half_price")
+          .in("id", itemIds)
+      : { data: [] };
     const menuMap = new Map((menuItems || []).map((m: any) => [m.id, m]));
 
-    const newOrderItems: any[] = [];
-    for (const input of lineInputs) {
+    const { data: modifierOptions } = allModIds.length > 0
+      ? await admin
+          .from("modifier_options")
+          .select("id, name, price_adjustment")
+          .in("id", allModIds)
+      : { data: [] };
+    const modMap = new Map((modifierOptions || []).map((m: any) => [m.id, m]));
+
+    const pricedItems = lineInputs.map((input: any) => {
       const menuItemId = input.menuItemId || input.id;
       const dbItem = menuMap.get(menuItemId);
       const isHalf = input.portion === "HALF";
-      const rawPrice = input.customPrice ?? (isHalf && dbItem?.half_price ? Number(dbItem.half_price) : Number(dbItem?.price ?? input.unitPriceSnapshot ?? 0));
+
+      const modifierTotal = (input.modifierIds || []).reduce((sum: number, modId: string) => {
+        const mod = modMap.get(modId);
+        return sum + (mod ? Number(mod.price_adjustment || 0) : 0);
+      }, 0);
+
+      let basePrice: number;
+      if (input.customPrice != null) {
+        basePrice = Number(input.customPrice);
+      } else if (isHalf && dbItem?.half_price != null) {
+        basePrice = Number(dbItem.half_price);
+      } else if (dbItem?.price != null) {
+        basePrice = Number(dbItem.price);
+      } else {
+        basePrice = Number(input.unitPriceSnapshot ?? input.price ?? input.unitPrice ?? 0);
+      }
+
+      const rawPrice = dbItem ? basePrice + modifierTotal : Number(input.unitPriceSnapshot ?? input.price ?? input.unitPrice ?? basePrice);
       const taxRate = Number(dbItem?.tax_rate_percent ?? input.taxRatePercent ?? 5);
       const unitPrice = toEffectiveInclusiveUnitPrice(rawPrice, taxRate, taxMode);
 
+      const quantity = Math.max(1, Number(input.quantity || 1));
       const priced = priceLine({
-        quantity: input.quantity || 1,
+        quantity,
         unitPriceInclusive: unitPrice,
         taxRatePercent: taxRate,
       });
 
-      newOrderItems.push({
+      const nameSnapshot =
+        input.customLabel ||
+        input.nameSnapshot ||
+        input.name ||
+        (dbItem ? (isHalf ? `${dbItem.name} (Half)` : dbItem.name) : "Item");
+
+      return {
         order_id: order.id,
         menu_item_id: menuItemId,
-        name_snapshot: input.customLabel || dbItem?.name || input.nameSnapshot || "Item",
-        quantity: input.quantity || 1,
+        name_snapshot: nameSnapshot,
+        quantity,
         unit_price_snapshot: unitPrice,
         line_total: priced.lineTotal,
         tax_rate_snapshot: taxRate,
         is_half_portion: isHalf,
         notes: input.kitchenNote || input.notes || null,
+        modifierIds: input.modifierIds || [],
         status: "PENDING",
-      });
-    }
+      };
+    });
 
     // 4. Insert items
+    const itemsToInsert = pricedItems.map(({ modifierIds: _mods, ...item }: any) => item);
     const { data: insertedItems, error: insertErr } = await admin
       .from("order_items")
-      .insert(newOrderItems)
+      .insert(itemsToInsert)
       .select("id, name_snapshot, quantity");
 
     if (insertErr || !insertedItems) {
       return NextResponse.json({ message: insertErr?.message || "Failed to insert items" }, { status: 500 });
+    }
+
+    // 4b. Insert modifier options
+    if (insertedItems && insertedItems.length > 0) {
+      const modifierRows: any[] = [];
+      insertedItems.forEach((inserted: any, idx: number) => {
+        const original = pricedItems[idx];
+        if (original && Array.isArray(original.modifierIds) && original.modifierIds.length > 0) {
+          for (const modId of original.modifierIds) {
+            const mod = modMap.get(modId);
+            if (mod) {
+              modifierRows.push({
+                order_item_id: inserted.id,
+                modifier_option_id: mod.id,
+                name_snapshot: mod.name,
+                price_adj_snapshot: Number(mod.price_adjustment || 0),
+              });
+            }
+          }
+        }
+      });
+
+      if (modifierRows.length > 0) {
+        await admin.from("order_item_modifiers").insert(modifierRows);
+      }
     }
 
     // 5. Recalculate totals for the whole order
@@ -115,13 +176,15 @@ export async function POST(
 
     const discountAmount = Number(order.discount_amount || 0);
     const tipAmount = Number(order.tip_amount || 0);
-    const newTotal = Math.max(0, newSubtotal - discountAmount + tipAmount);
+    const newTotal = round2(Math.max(0, newSubtotal - discountAmount + tipAmount));
+    const finalSubtotal = round2(newSubtotal);
+    const finalTax = round2(newTax);
 
     await admin
       .from("orders")
       .update({
-        subtotal: newSubtotal,
-        tax_amount: newTax,
+        subtotal: finalSubtotal,
+        tax_amount: finalTax,
         total_amount: newTotal,
         updated_at: new Date().toISOString(),
       })
@@ -162,8 +225,8 @@ export async function POST(
     return NextResponse.json({
       id: order.id,
       orderNumber: order.order_number,
-      subtotal: String(newSubtotal.toFixed(2)),
-      taxAmount: String(newTax.toFixed(2)),
+      subtotal: String(finalSubtotal.toFixed(2)),
+      taxAmount: String(finalTax.toFixed(2)),
       discountAmount: String(order.discount_amount || "0.00"),
       tipAmount: String(order.tip_amount || "0.00"),
       loyaltyPointsRedeemed: order.loyalty_points_redeemed || 0,
@@ -176,4 +239,3 @@ export async function POST(
     return NextResponse.json({ message: err.message || "Failed to add items" }, { status: 500 });
   }
 }
-

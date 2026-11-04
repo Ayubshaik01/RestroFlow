@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getServerSessionUser } from "@/lib/auth/server-session";
-import { priceLine, toEffectiveInclusiveUnitPrice } from "@/lib/orders/pricing";
+import { priceLine, round2, toEffectiveInclusiveUnitPrice } from "@/lib/orders/pricing";
 
 export async function GET(req: Request) {
   const user = await getServerSessionUser();
@@ -108,15 +108,67 @@ export async function POST(req: Request) {
 
     // 3. Price the order lines
     const lineInputs = body.items || [];
+    if (!Array.isArray(lineInputs) || lineInputs.length === 0) {
+      return NextResponse.json({ message: "No items provided" }, { status: 400 });
+    }
+
+    // Collect all menuItemIds and modifierIds to fetch from DB
+    const itemIds = lineInputs.map((i: any) => i.menuItemId || i.id).filter(Boolean);
+    const allModIds = lineInputs.flatMap((i: any) => i.modifierIds || []).filter(Boolean);
+
+    // Fetch menu items from DB
+    const { data: menuItems } = itemIds.length > 0
+      ? await admin
+          .from("menu_items")
+          .select("id, name, price, tax_rate_percent, half_price")
+          .in("id", itemIds)
+      : { data: [] };
+    const menuMap = new Map((menuItems || []).map((m: any) => [m.id, m]));
+
+    // Fetch modifier options from DB
+    const { data: modifierOptions } = allModIds.length > 0
+      ? await admin
+          .from("modifier_options")
+          .select("id, name, price_adjustment")
+          .in("id", allModIds)
+      : { data: [] };
+    const modMap = new Map((modifierOptions || []).map((m: any) => [m.id, m]));
+
     let subtotal = 0;
     let taxAmount = 0;
 
     const pricedItems = lineInputs.map((item: any) => {
-      const rawPrice = Number(item.unitPriceSnapshot || item.price || 0);
-      const taxRate = Number(item.taxRatePercent || 5);
+      const menuItemId = item.menuItemId || item.id;
+      const dbItem = menuMap.get(menuItemId);
+      const isHalf = item.portion === "HALF";
+
+      // Calculate modifier total from DB options
+      const modifierTotal = (item.modifierIds || []).reduce((sum: number, modId: string) => {
+        const mod = modMap.get(modId);
+        return sum + (mod ? Number(mod.price_adjustment || 0) : 0);
+      }, 0);
+
+      // Determine raw base price
+      let basePrice: number;
+      if (item.customPrice != null) {
+        basePrice = Number(item.customPrice);
+      } else if (isHalf && dbItem?.half_price != null) {
+        basePrice = Number(dbItem.half_price);
+      } else if (dbItem?.price != null) {
+        basePrice = Number(dbItem.price);
+      } else {
+        basePrice = Number(item.unitPriceSnapshot ?? item.price ?? item.unitPrice ?? 0);
+      }
+
+      // If client supplied an already-calculated unitPrice and dbItem wasn't found, use it;
+      // otherwise calculate authoritative price from base + modifierTotal.
+      const rawPrice = dbItem ? basePrice + modifierTotal : Number(item.unitPriceSnapshot ?? item.price ?? item.unitPrice ?? basePrice);
+      const taxRate = Number(dbItem?.tax_rate_percent ?? item.taxRatePercent ?? 5);
       const unitPrice = toEffectiveInclusiveUnitPrice(rawPrice, taxRate, taxMode);
+
+      const quantity = Math.max(1, Number(item.quantity || 1));
       const priced = priceLine({
-        quantity: item.quantity,
+        quantity,
         unitPriceInclusive: unitPrice,
         taxRatePercent: taxRate,
       });
@@ -124,19 +176,29 @@ export async function POST(req: Request) {
       subtotal += priced.lineTotal;
       taxAmount += priced.taxAmount;
 
+      const nameSnapshot =
+        item.customLabel ||
+        item.nameSnapshot ||
+        item.name ||
+        (dbItem ? (isHalf ? `${dbItem.name} (Half)` : dbItem.name) : "Item");
+
       return {
-        menu_item_id: item.menuItemId || item.id,
-        name_snapshot: item.nameSnapshot || item.name || "Item",
-        quantity: item.quantity,
+        menu_item_id: menuItemId,
+        name_snapshot: nameSnapshot,
+        quantity,
         unit_price_snapshot: unitPrice,
         line_total: priced.lineTotal,
         tax_rate_snapshot: taxRate,
-        notes: item.notes || null,
+        is_half_portion: isHalf,
+        notes: item.kitchenNote || item.notes || null,
+        modifierIds: item.modifierIds || [],
         status: "PENDING",
       };
     });
 
-    const totalAmount = subtotal;
+    const totalAmount = round2(subtotal);
+    const finalSubtotal = round2(subtotal);
+    const finalTax = round2(taxAmount);
 
     // 4. Create Order
     const { data: newOrder, error: orderError } = await admin
@@ -149,8 +211,8 @@ export async function POST(req: Request) {
         type: body.type || "DINE_IN",
         status: "OPEN",
         acceptance: body.type === "DINE_IN" ? "NOT_REQUIRED" : "PENDING",
-        subtotal,
-        tax_amount: taxAmount,
+        subtotal: finalSubtotal,
+        tax_amount: finalTax,
         total_amount: totalAmount,
         guest_name: body.guestName || null,
         created_by_id: user.id,
@@ -163,15 +225,40 @@ export async function POST(req: Request) {
     }
 
     // 5. Insert Order Items
-    const itemsWithOrderId = pricedItems.map((item: any) => ({
+    const itemsToInsert = pricedItems.map(({ modifierIds: _mods, ...item }: any) => ({
       ...item,
       order_id: newOrder.id,
     }));
 
     const { data: insertedItems } = await admin
       .from("order_items")
-      .insert(itemsWithOrderId)
-      .select("id, name_snapshot, quantity");
+      .insert(itemsToInsert)
+      .select("id, menu_item_id, name_snapshot, quantity");
+
+    // 5b. Insert Order Item Modifiers
+    if (insertedItems && insertedItems.length > 0) {
+      const modifierRows: any[] = [];
+      insertedItems.forEach((inserted: any, idx: number) => {
+        const original = pricedItems[idx];
+        if (original && Array.isArray(original.modifierIds) && original.modifierIds.length > 0) {
+          for (const modId of original.modifierIds) {
+            const mod = modMap.get(modId);
+            if (mod) {
+              modifierRows.push({
+                order_item_id: inserted.id,
+                modifier_option_id: mod.id,
+                name_snapshot: mod.name,
+                price_adj_snapshot: Number(mod.price_adjustment || 0),
+              });
+            }
+          }
+        }
+      });
+
+      if (modifierRows.length > 0) {
+        await admin.from("order_item_modifiers").insert(modifierRows);
+      }
+    }
 
     // 6. Create Kitchen Ticket (KOT)
     const { data: kot } = await admin
@@ -225,4 +312,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

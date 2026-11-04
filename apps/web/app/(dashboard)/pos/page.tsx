@@ -169,8 +169,14 @@ function PosPageInner() {
     const sentTableId = tableId;
     const items = lines.map((l) => ({
       menuItemId: l.menuItemId,
+      name: l.name,
+      nameSnapshot: l.name,
       quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      unitPriceSnapshot: l.unitPrice,
+      price: l.unitPrice,
       modifierIds: l.modifierIds,
+      modifierLabel: l.modifierLabel,
       ...(l.portion
         ? {
             portion: l.portion.kind,
