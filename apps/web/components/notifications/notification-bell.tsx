@@ -2,8 +2,8 @@
 
 import { Bell, CheckCheck, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { io } from "socket.io-client";
 import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -22,10 +22,7 @@ import {
 } from "@/hooks/use-notifications";
 import { openEntity } from "@/lib/entity-events";
 import { playNotificationFeedback } from "@/lib/notification-feedback";
-import { resolveWsUrl } from "@/lib/ws-url";
 
-// How many alerts the live socket already rang for but the refresh has not
-// listed yet (module-level: only one bell is ever mounted).
 const socketAnnounce = { pending: 0 };
 
 function timeAgo(iso: string): string {
@@ -39,13 +36,6 @@ function timeAgo(iso: string): string {
   return `${days}d ago`;
 }
 
-// Bell + unread badge for the dashboard topbar (mounted once in AppShell so
-// it's visible across every (dashboard) page). Subscribes to the branch's
-// realtime socket for `notification.created` — pushed only to sockets whose
-// authenticated user was actually resolved as a recipient server-side (see
-// notifications.service.ts / realtime.gateway.ts's `user:<id>` room), so
-// this component never needs to filter events client-side; anything it
-// receives is genuinely meant for the logged-in user.
 export function NotificationBell() {
   const { branchId } = useBranch();
   const queryClient = useQueryClient();
@@ -53,15 +43,7 @@ export function NotificationBell() {
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
 
-  // Per-device mute, not per-account — a loud kitchen expo screen and a
-  // quiet back-office laptop are different physical environments. Shared
-  // with the KDS page and the Settings > Notifications toggle via
-  // use-notification-mute.ts, so muting from any of the three keeps the
-  // others in sync on this device.
   const [muted, toggleMuted] = useNotificationMute();
-  // Mirrors `muted` for the socket handler below, so toggling the mute
-  // button takes effect immediately without tearing down and reopening the
-  // socket connection just to rebind a listener.
   const mutedRef = useRef(muted);
   useEffect(() => {
     mutedRef.current = muted;
@@ -70,24 +52,29 @@ export function NotificationBell() {
   useEffect(() => {
     if (!branchId) return;
 
-    const socket = io(resolveWsUrl(), { query: { branchId }, withCredentials: true });
-
-    socket.on("notification.created", () => {
-      // The refresh below will list this one; remember its id (via the poll
-      // effect) as already announced by skipping it there.
-      socketAnnounce.pending += 1;
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      if (!mutedRef.current) playNotificationFeedback();
-    });
+    const channel = supabase
+      .channel(`bell-notifications-${branchId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `branch_id=eq.${branchId}`,
+        },
+        () => {
+          socketAnnounce.pending += 1;
+          queryClient.invalidateQueries({ queryKey: ["notifications"] });
+          if (!mutedRef.current) playNotificationFeedback();
+        },
+      )
+      .subscribe();
 
     return () => {
-      socket.disconnect();
+      void supabase.removeChannel(channel);
     };
   }, [branchId, queryClient]);
 
-  // Fallback for when the live socket is down or was asleep: if the periodic
-  // refresh turns up an unread notification we haven't announced yet, ring
-  // for it so a new order is never silent.
   const announced = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!data) return;
@@ -97,7 +84,6 @@ export function NotificationBell() {
     }
     const fresh = data.data.filter((n) => !n.readAt && !announced.current!.has(n.id));
     fresh.forEach((n) => announced.current!.add(n.id));
-    // Ones the live socket already rang/toasted for are skipped here.
     const skip = Math.min(socketAnnounce.pending, fresh.length);
     socketAnnounce.pending -= skip;
     const toAnnounce = fresh.slice(skip);
@@ -197,12 +183,6 @@ export function NotificationBell() {
             {notifications.map((notification) => (
               <DropdownMenuItem
                 key={notification.id}
-                // Generously sized row (min 44px) — this dropdown is used
-                // from tablets and shared kitchen/expo screens as much as
-                // a mouse-driven desktop session, so it follows the same
-                // large-touch-target discipline DESIGN_SYSTEM.md calls out
-                // for POS/KDS surfaces rather than the compact default menu
-                // item sizing used for text-only settings menus.
                 className="min-h-11 flex-col items-start gap-0.5 whitespace-normal px-2 py-2"
                 onClick={() => handleSelect(notification)}
               >

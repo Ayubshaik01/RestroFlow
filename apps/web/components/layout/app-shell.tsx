@@ -17,11 +17,8 @@ import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
 
 // The restaurant's own logo + name lead the sidebar header — this is
-// white-label self-hosted software, so the operator's branding takes the
-// prime spot an operator actually looks at. The Nodedr OrderRestro product
-// mark moves to a small credit line at the bottom (BrandFooter) instead of
-// competing with it up here. Falls back to the product mark only until the
-// restaurant sets its own logo/name under Settings.
+// white-label software, so the operator's branding takes the prime spot.
+// The RestroFlow product mark is shown when no custom restaurant logo is set.
 function RestaurantBrand() {
   const { branchId } = useBranch();
   const { data } = useSettings(branchId);
@@ -45,9 +42,9 @@ function RestaurantBrand() {
 
   return (
     <>
-      <Logo />
+      <Logo size={28} />
       <span className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
-        {restaurant?.name ?? "Nodedr OrderRestro"}
+        {restaurant?.name ?? "RestroFlow POS"}
       </span>
     </>
   );

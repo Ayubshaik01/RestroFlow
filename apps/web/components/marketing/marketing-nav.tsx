@@ -3,14 +3,14 @@
 import { Github, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import { Logo } from "@/components/layout/logo";
+import { RestroFlowLogo } from "@/components/layout/restroflow-logo";
 import { Button } from "@/components/ui/button";
 import { downloadHref } from "@/lib/downloads";
 
 const links = [
   { href: "#features", label: "Features" },
-  { href: "#security", label: "Security" },
-  { href: "#get-started", label: "Get started" },
+  { href: "#security", label: "Security & Realtime" },
+  { href: "/docs", label: "Docs" },
 ];
 
 export function MarketingNav() {
@@ -20,10 +20,7 @@ export function MarketingNav() {
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2.5">
-          <Logo size={30} />
-          <span className="text-[15px] font-semibold tracking-tight text-foreground">
-            OrderRestro
-          </span>
+          <RestroFlowLogo size={32} showText showBadge badgeText="CLOUD" />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
@@ -31,7 +28,7 @@ export function MarketingNav() {
             <a
               key={l.href}
               href={l.href}
-              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               {l.label}
             </a>
@@ -46,11 +43,8 @@ export function MarketingNav() {
             <Github className="size-4" />
             GitHub
           </a>
-          <Button variant="ghost" size="default" render={<Link href="/login" />}>
-            Sign in
-          </Button>
-          <Button variant="default" size="default" render={<Link href="/signup" />}>
-            Get started free
+          <Button variant="default" size="default" className="font-semibold" render={<Link href="/login" />}>
+            Sign in to POS
           </Button>
         </div>
 
@@ -79,11 +73,8 @@ export function MarketingNav() {
               </a>
             ))}
             <div className="mt-2 flex flex-col gap-2">
-              <Button variant="outline" render={<Link href="/login" />}>
-                Sign in
-              </Button>
-              <Button variant="default" render={<Link href="/signup" />}>
-                Get started free
+              <Button variant="default" render={<Link href="/login" />}>
+                Sign in to POS
               </Button>
             </div>
           </nav>

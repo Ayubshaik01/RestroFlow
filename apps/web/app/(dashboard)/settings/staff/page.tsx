@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Trash2, ShieldCheck, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import { AddStaffDialog } from "@/components/settings/add-staff-dialog";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
@@ -54,8 +54,18 @@ export default function StaffPage() {
       <SettingsTabs />
 
       <Card className="flex flex-col gap-4 p-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[18px] font-medium text-foreground">Staff accounts</h2>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-[18px] font-medium text-foreground">Staff accounts</h2>
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-500">
+                <ShieldCheck className="h-3.5 w-3.5" /> Owner Controlled
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              New accounts are created exclusively here by the Owner/Admin. Public registration is locked.
+            </p>
+          </div>
           <AddStaffDialog />
         </div>
 

@@ -1,0 +1,15 @@
+import { NextResponse } from "next/server";
+import { getServerSessionUser } from "@/lib/auth/server-session";
+
+export async function POST() {
+  const user = await getServerSessionUser();
+  if (!user) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  return NextResponse.json({
+    status: "UP_TO_DATE",
+    message: "RestroFlow is running the latest production release.",
+  });
+}
+

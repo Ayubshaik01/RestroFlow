@@ -62,13 +62,18 @@ export default function LoginPage() {
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         className="w-full max-w-sm"
       >
-        <div className="mb-10 flex flex-col items-center gap-2 text-center">
-          <Link href="/">
-            <Logo size={44} />
+        <div className="mb-10 flex flex-col items-center gap-3 text-center">
+          <Link href="/" className="transition-transform hover:scale-105">
+            <Logo size={52} />
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Nodedr OrderRestro
-          </h1>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              Restro<span className="bg-gradient-to-r from-orange-500 via-rose-500 to-amber-500 bg-clip-text text-transparent font-extrabold">Flow</span>
+            </h1>
+            <p className="mt-1 text-xs font-semibold tracking-wider text-rose-500 uppercase">
+              The Intelligent Restaurant OS & POS
+            </p>
+          </div>
           <p className="text-sm text-muted-foreground">Sign in to manage your restaurant</p>
         </div>
 
@@ -98,7 +103,6 @@ export default function LoginPage() {
             <Label htmlFor="password">Password</Label>
             <PasswordInput
               id="password"
-              
               autoComplete="current-password"
               enterKeyHint="go"
               className="h-11"
@@ -138,16 +142,16 @@ export default function LoginPage() {
             </div>
           )}
 
-          <Button type="submit" className="mt-2 h-12 text-base" disabled={login.isPending}>
-            {login.isPending ? "Signing in…" : "Sign in"}
+          <Button type="submit" className="mt-2 h-12 text-base font-semibold" disabled={login.isPending}>
+            {login.isPending ? "Signing in…" : "Sign in to RestroFlow"}
           </Button>
         </form>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
-          New restaurant?{" "}
-          <Link href="/signup" className="font-medium text-foreground hover:underline">
-            Create an account
-          </Link>
+          Need a staff account?{" "}
+          <span className="font-medium text-foreground">
+            Contact your restaurant Owner / Admin
+          </span>
         </p>
       </motion.div>
     </main>

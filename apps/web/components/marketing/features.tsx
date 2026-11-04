@@ -1,70 +1,70 @@
 import {
   ChefHat,
-  GitBranch,
+  Database,
   Gift,
   Package,
   Plug,
   QrCode,
   ShieldCheck,
   UtensilsCrossed,
-  WifiOff,
+  Zap,
 } from "lucide-react";
 import { Reveal, RevealGroup, RevealItem } from "@/components/marketing/reveal";
 
 const features = [
   {
     icon: UtensilsCrossed,
-    title: "Dine-in POS & billing",
+    title: "Dine-in POS & Billing",
     description:
       "Modifiers, combos, split & merge bills, tips, gift cards, multi-payment checkout, and tax-inclusive GST pricing done right.",
   },
   {
     icon: ChefHat,
-    title: "Live Kitchen Display",
+    title: "Live Kitchen Display (KDS)",
     description:
-      "KOTs auto-routed to the right kitchen station, reprint & priority controls, and per-station prep-time reporting.",
+      "KOTs auto-routed in real-time to the right kitchen station, reprint & priority controls, and per-station prep-time analytics.",
   },
   {
     icon: QrCode,
-    title: "Tables & reservations",
+    title: "Tables & Floor Plan",
     description:
-      "Visual floor plan, booking with waitlist, table transfer, and per-table QR codes for a read-only public menu.",
+      "Interactive visual floor plan, live occupancy, reservation waitlist, table transfer, and dynamic QR codes for guest self-ordering.",
   },
   {
     icon: Package,
-    title: "Inventory & procurement",
+    title: "Inventory & Procurement",
     description:
-      "Ingredients, weighted-average recipe costing, purchase orders, goods receipt with batch/lot tracking, and FIFO waste logging.",
+      "Ingredients, recipe costing, automated stock deductions, purchase orders, goods receipt with batch tracking, and waste logging.",
   },
   {
     icon: Gift,
-    title: "CRM, loyalty & gift cards",
+    title: "CRM & Customer Loyalty",
     description:
-      "Customer profiles, earn-and-redeem loyalty points, gift card issuance, and full visit history.",
+      "Customer profiles, visit history, loyalty point accrual and redemption, and custom gift card issuance.",
   },
   {
-    icon: WifiOff,
-    title: "Offline-first by design",
+    icon: Zap,
+    title: "Real-time Multi-terminal Flow",
     description:
-      "The whole stack runs on one local server. Order-taking, billing, KDS, and printing keep working with the WAN cable unplugged.",
+      "Instantaneous sync across POS terminals, kitchen screens, waiters' phones, and self-service kiosks with Supabase Realtime.",
   },
   {
     icon: ShieldCheck,
-    title: "RBAC on every action",
+    title: "Granular RBAC Security",
     description:
-      "Granular, individually toggleable permissions and strict multi-tenant isolation — never a hardcoded role check.",
+      "Role-based access controls on every action, custom employee PIN switching, and strict multi-tenant branch isolation.",
   },
   {
-    icon: GitBranch,
-    title: "Open source, no lock-in",
+    icon: Database,
+    title: "Supabase & Postgres Core",
     description:
-      "AGPL-3.0 licensed. Self-host on Docker, CasaOS/ZimaOS, or a Windows client — your data never has to leave your building.",
+      "Powered by modern PostgreSQL with Row-Level Security (RLS) — enterprise-grade reliability, automated backups, and scalability.",
   },
   {
     icon: Plug,
-    title: "API & MCP integrations",
+    title: "API & Headless Integrations",
     description:
-      "Connect an MCP client like Claude Desktop with your own permissions, or issue a scoped API key so your website can browse the menu, place orders, and book tables through OrderRestro directly.",
+      "Connect third-party aggregators, mobile apps, or your own customer-facing website directly to RestroFlow via REST APIs.",
   },
 ];
 
@@ -73,15 +73,15 @@ export function Features() {
     <section id="features" className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
       <Reveal className="mx-auto max-w-2xl text-center">
         <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          Everything a real dine-in operation needs
+          Everything an ambitious restaurant operation needs
         </h2>
         <p className="mt-4 text-lg text-muted-foreground">
-          Not a retail POS bolted onto a restaurant — purpose-built for
-          dine-in, takeaway, and kitchen operations from day one.
+          Not a generic retail tool adapted for dining — RestroFlow is purpose-built for
+          high-volume restaurants, bistros, cafes, and multi-branch food chains.
         </p>
       </Reveal>
 
-      <RevealGroup className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      <RevealGroup className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {features.map((f) => (
           <RevealItem
             key={f.title}

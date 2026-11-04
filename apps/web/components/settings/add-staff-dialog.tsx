@@ -32,6 +32,7 @@ export function AddStaffDialog() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [roleId, setRoleId] = useState("");
   const { branches } = useBranch();
   const [branchIds, setBranchIds] = useState<string[]>([]);
@@ -44,6 +45,7 @@ export function AddStaffDialog() {
     setEmail("");
     setPhone("");
     setPassword("");
+    setPin("");
     setRoleId("");
     setBranchIds([]);
   };
@@ -68,33 +70,35 @@ export function AddStaffDialog() {
         email: email || undefined,
         phone: phone || undefined,
         password,
+        pin: pin || undefined,
         roleId,
         branchIds,
-      },
+      } as any,
       {
         onSuccess: () => {
-          toast.success(`${name} added`);
-          setOpen(false);
+          toast.success(`${name} added to staff`);
           reset();
+          setOpen(false);
         },
-        onError: (err) =>
-          toast.error(err instanceof ApiError ? err.message : "Could not add staff account"),
+        onError: (err) => {
+          toast.error(err instanceof ApiError ? err.message : "Could not add staff");
+        },
       },
     );
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm">Add staff</Button>} />
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <DialogHeader>
-            <DialogTitle>New staff account</DialogTitle>
-          </DialogHeader>
+      <DialogTrigger render={<Button size="sm" />}>Add staff account</DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add staff account</DialogTitle>
+        </DialogHeader>
 
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="s-name">Name</Label>
-            <Input id="s-name" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+            <Label htmlFor="s-name">Full name</Label>
+            <Input id="s-name" value={name} onChange={(e) => setName(e.target.value)} required />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -108,16 +112,30 @@ export function AddStaffDialog() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="s-password">Password</Label>
-            <PasswordInput
-              id="s-password"
-              
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={8}
-              required
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="s-password">Password</Label>
+              <PasswordInput
+                id="s-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                minLength={8}
+                placeholder="Min. 8 characters"
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="s-pin">Quick Switch PIN</Label>
+              <Input
+                id="s-pin"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="e.g. 1234"
+                value={pin}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -140,7 +158,7 @@ export function AddStaffDialog() {
             <Label>Branches</Label>
             <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
               {branches.map((b) => (
-                <label key={b.id} className="flex items-center gap-2 text-sm">
+                <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer">
                   <Checkbox
                     checked={branchIds.includes(b.id)}
                     onCheckedChange={() => toggleBranch(b.id)}
@@ -153,7 +171,7 @@ export function AddStaffDialog() {
 
           <DialogFooter>
             <Button type="submit" disabled={createStaff.isPending}>
-              {createStaff.isPending ? "Adding…" : "Add staff"}
+              {createStaff.isPending ? "Adding…" : "Add staff account"}
             </Button>
           </DialogFooter>
         </form>

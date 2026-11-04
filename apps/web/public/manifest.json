@@ -1,17 +1,23 @@
 {
-  "name": "Nodedr OrderRestro",
-  "short_name": "OrderRestro",
-  "description": "Offline-first restaurant management system — POS, tables, kitchen display, menu, inventory.",
+  "name": "RestroFlow POS",
+  "short_name": "RestroFlow",
+  "description": "The Intelligent Cloud Restaurant OS & POS — fast orders, realtime kitchen display, interactive tables, and inventory.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone"],
   "orientation": "any",
-  "background_color": "#0f0f11",
-  "theme_color": "#9f1239",
+  "background_color": "#0c0a0f",
+  "theme_color": "#e11d48",
   "lang": "en",
   "categories": ["business", "food", "productivity"],
   "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
@@ -23,12 +29,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-512-maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
     }
   ]
 }

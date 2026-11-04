@@ -20,6 +20,7 @@ export interface RestaurantSettings {
   upiPayeeName: string | null;
   loyaltyPointValue: string;
   loyaltyEarnPerCurrency: number;
+  allowPublicSignup?: boolean;
 }
 
 export interface BranchSettings {
@@ -60,7 +61,8 @@ export function useSettings(branchId: string | null) {
 export function useUpdateRestaurantSettings(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (dto: RestaurantSettingsDto) => api.patch("/settings/restaurant", dto),
+    mutationFn: (dto: RestaurantSettingsDto & { allowPublicSignup?: boolean }) =>
+      api.patch("/settings/restaurant", dto),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings", branchId] }),
   });
 }

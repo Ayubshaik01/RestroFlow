@@ -2,7 +2,13 @@
   "name": "restroflow-pos",
   "version": "1.0.0",
   "private": true,
-  "description": "RestroFlow � The Intelligent Cloud Restaurant OS & POS powered by Next.js & Supabase",
+  "description": "RestroFlow – The Intelligent Cloud Restaurant OS & POS powered by Next.js & Supabase",
+  "author": "Ayub Shaik (ayubshaik01)",
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",

@@ -2,54 +2,90 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { io } from "socket.io-client";
-import { REALTIME_EVENTS, realtimeInvalidations } from "@/lib/realtime-keys";
+import { supabase } from "@/lib/supabase/client";
+import { realtimeInvalidations } from "@/lib/realtime-keys";
 import { setRealtimeState } from "@/lib/realtime-status";
-import { resolveWsUrl } from "@/lib/ws-url";
 
-// One socket connection per mounted consumer, joined to the branch's room
-// server-side (see backend RealtimeGateway). Invalidates the relevant
-// TanStack Query caches on push events instead of polling — this is what
-// lets KDS/table screens update instantly across terminals.
-//
-// Pushes are not queued for a client that is away, so whenever the socket
-// (re)connects after having been down, every cached query is refetched once:
-// that is what makes a screen catch up after Wi-Fi drops, a sleeping tablet or
-// a server restart instead of showing the state from before the gap.
+/**
+ * Connects to Supabase Realtime channels for the active restaurant branch.
+ * Listens for live changes on orders, kitchen tickets (KOTs), tables, and reservations,
+ * invalidating relevant TanStack Query caches instantly without manual polling.
+ */
 export function useRealtime(branchId: string | null) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!branchId) return;
 
-    const socket = io(resolveWsUrl(), { query: { branchId }, withCredentials: true });
-    let wasDown = false;
+    setRealtimeState("connecting");
 
-    socket.on("connect", () => {
-      setRealtimeState("live");
-      if (wasDown) {
-        wasDown = false;
-        void queryClient.invalidateQueries();
-      }
-    });
-    const down = () => {
-      wasDown = true;
-      setRealtimeState("offline");
-    };
-    socket.on("disconnect", down);
-    socket.on("connect_error", down);
-
-    for (const event of REALTIME_EVENTS) {
-      socket.on(event, () => {
-        realtimeInvalidations(event, branchId).forEach((queryKey) =>
-          queryClient.invalidateQueries({ queryKey }),
-        );
+    const channel = supabase
+      .channel(`realtime-branch-${branchId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orders",
+          filter: `branch_id=eq.${branchId}`,
+        },
+        () => {
+          realtimeInvalidations("order.updated", branchId).forEach((queryKey) =>
+            queryClient.invalidateQueries({ queryKey }),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "kots",
+        },
+        () => {
+          realtimeInvalidations("kot.updated", branchId).forEach((queryKey) =>
+            queryClient.invalidateQueries({ queryKey }),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tables",
+        },
+        () => {
+          realtimeInvalidations("table.updated", branchId).forEach((queryKey) =>
+            queryClient.invalidateQueries({ queryKey }),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "reservations",
+          filter: `branch_id=eq.${branchId}`,
+        },
+        () => {
+          realtimeInvalidations("reservation.updated", branchId).forEach((queryKey) =>
+            queryClient.invalidateQueries({ queryKey }),
+          );
+        },
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setRealtimeState("live");
+        } else if (status === "CLOSED" || status === "CHANNEL_ERROR") {
+          setRealtimeState("offline");
+        }
       });
-    }
 
     return () => {
-      socket.disconnect();
-      setRealtimeState("connecting");
+      void supabase.removeChannel(channel);
+      setRealtimeState("offline");
     };
   }, [branchId, queryClient]);
 }

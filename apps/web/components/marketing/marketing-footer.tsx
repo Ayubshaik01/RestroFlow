@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Logo } from "@/components/layout/logo";
+import { RestroFlowLogo } from "@/components/layout/restroflow-logo";
 import { downloadHref } from "@/lib/downloads";
 
 const columns = [
@@ -7,17 +7,17 @@ const columns = [
     title: "Product",
     links: [
       { href: "#features", label: "Features" },
-      { href: "#security", label: "Security" },
+      { href: "#security", label: "Security & Cloud" },
       { href: "#get-started", label: "Get started" },
     ],
   },
   {
-    title: "Resources",
+    title: "Platform",
     links: [
       { href: downloadHref("github"), label: "GitHub" },
-      { href: "/docs/api", label: "API & MCP" },
+      { href: "/docs/api", label: "API & Supabase Integrations" },
       { href: "/docs/accessibility", label: "Accessibility statement" },
-      { href: "/docs/compliance-india", label: "India compliance notes" },
+      { href: "/docs/compliance-india", label: "Compliance & GST Notes" },
     ],
   },
   {
@@ -35,13 +35,11 @@ export function MarketingFooter() {
       <div className="mx-auto max-w-6xl">
         <div className="grid gap-10 sm:grid-cols-[1.5fr_repeat(3,1fr)]">
           <div>
-            <Link href="/" className="flex items-center gap-2.5">
-              <Logo size={28} />
-              <span className="text-sm font-semibold text-foreground">OrderRestro</span>
+            <Link href="/" className="inline-flex items-center gap-2.5">
+              <RestroFlowLogo size={32} showText showBadge badgeText="CLOUD" />
             </Link>
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              Offline-first restaurant management, self-hosted on your own
-              server. Built by Nodedr Infotech Private Limited.
+            <p className="mt-3 max-w-xs text-sm text-muted-foreground leading-relaxed">
+              The intelligent cloud restaurant operating system and POS. Powered by Next.js and Supabase for instantaneous multi-terminal flow.
             </p>
           </div>
 
@@ -68,9 +66,9 @@ export function MarketingFooter() {
 
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-border/60 pt-6 sm:flex-row">
           <p className="text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} Nodedr Infotech Private Limited. Licensed AGPL-3.0.
+            &copy; {new Date().getFullYear()} RestroFlow. All rights reserved.
           </p>
-          <p className="text-xs text-muted-foreground">Made in India.</p>
+          <p className="text-xs text-muted-foreground">The Modern Restaurant Operating System.</p>
         </div>
       </div>
     </footer>

@@ -1,15 +1,21 @@
-import Image from "next/image";
-import { cn } from "@/lib/utils";
+import { RestroFlowLogo, type RestroFlowLogoProps } from "./restroflow-logo";
 
-export function Logo({ className, size = 32 }: { className?: string; size?: number }) {
+export { RestroFlowLogo, RestroFlowIcon } from "./restroflow-logo";
+
+export function Logo({
+  className,
+  size = 32,
+  showText = false,
+  showBadge = false,
+  badgeText = "POS",
+}: RestroFlowLogoProps) {
   return (
-    <Image
-      src="/logo.png"
-      alt="Nodedr OrderRestro"
-      width={size}
-      height={size}
-      className={cn("shrink-0 rounded-lg object-contain", className)}
-      priority
+    <RestroFlowLogo
+      size={size}
+      showText={showText}
+      showBadge={showBadge}
+      badgeText={badgeText}
+      className={className}
     />
   );
 }
