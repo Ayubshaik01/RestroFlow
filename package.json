@@ -1,48 +1,50 @@
 {
-  "name": "nodedr-orderrestro",
+  "name": "restroflow-pos",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.1.0",
-  "description": "Nodedr OrderRestro — offline-first Restaurant Management System",
-  "author": "Raktim Ranjit <mail@raktimranjit.com> (https://github.com/Raktim94)",
-  "license": "AGPL-3.0-only",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Raktim94/nodedr-restaurant-pos.git"
-  },
-  "bugs": {
-    "url": "https://github.com/Raktim94/nodedr-restaurant-pos/issues"
-  },
-  "homepage": "https://orderrestro.nodedr.com/",
-  "keywords": [
-    "restaurant-management",
-    "restaurant-pos",
-    "point-of-sale",
-    "kitchen-display-system",
-    "inventory-management",
-    "self-hosted",
-    "offline-first",
-    "upi-payments",
-    "gst-billing",
-    "restaurant-payroll",
-    "qr-ordering",
-    "casaos",
-    "nestjs",
-    "nextjs"
-  ],
+  "description": "RestroFlow � The Intelligent Cloud Restaurant OS & POS powered by Next.js & Supabase",
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
-    "build-windows-msix": "pwsh -NoProfile -File windows/msix/build-windows-msix.ps1 && pwsh -NoProfile -File windows/msix/validate-msix.ps1"
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.7.0",
+    "@hookform/resolvers": "^3.10.0",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.49.1",
+    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-table": "^8.21.3",
+    "bcryptjs": "^2.4.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.469.0",
+    "motion": "^13.1.0",
+    "next": "16.4.2",
+    "next-themes": "^0.4.6",
+    "qrcode.react": "^4.2.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-hook-form": "^7.85.0",
+    "recharts": "^2.15.4",
+    "shadcn": "^4.17.0",
+    "sonner": "^1.7.4",
+    "tailwind-merge": "^2.6.1",
+    "tw-animate-css": "^1.4.0",
+    "zod": "^4.6.6"
   },
   "devDependencies": {
-    "turbo": "^2.10.9",
-    "typescript": "^5.9.3"
-  },
-  "packageManager": "pnpm@11.10.0",
-  "engines": {
-    "node": ">=22"
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "^19.2.4",
+    "docx": "^9.15.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.3.8",
+    "tailwindcss": "^4.3.3",
+    "typescript": "5.9.3"
   }
 }
