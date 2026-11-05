@@ -4,3 +4,4 @@
   "buildCommand": "next build --webpack",
   "installCommand": "npm install --legacy-peer-deps"
 }
+

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSessionUser } from "@/lib/auth/server-session";
 
-export interface VendorInvoice {
+interface VendorInvoice {
   id: string;
   branchId: string;
   invoiceNumber: string;

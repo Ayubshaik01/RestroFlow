@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSessionUser } from "@/lib/auth/server-session";
 import { formatReportToCsv, formatReportToExcelXml, formatReportToHtml, generateReportData } from "../../report-service";
-import { REPORT_CATALOG } from "../../route";
+import { REPORT_CATALOG } from "../../catalog";
 
 export async function GET(
   req: Request,

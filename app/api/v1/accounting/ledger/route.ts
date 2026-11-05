@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSessionUser } from "@/lib/auth/server-session";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export interface JournalEntry {
+interface JournalEntry {
   id: string;
   branchId: string;
   entryDate: string;
