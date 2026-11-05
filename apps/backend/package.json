@@ -36,7 +36,7 @@
     "@nestjs/platform-express": "^11.2.6",
     "@nestjs/platform-socket.io": "^11.2.6",
     "@nestjs/schedule": "^6.1.3",
-    "@nestjs/swagger": "^8.1.1",
+    "@nestjs/swagger": "^11.0.0",
     "@nestjs/throttler": "^6.7.0",
     "@nestjs/websockets": "^11.2.6",
     "@nodedr-restaurant/types": "workspace:*",

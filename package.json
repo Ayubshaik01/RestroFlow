@@ -6,8 +6,7 @@
   "author": "Ayub Shaik (ayubshaik01)",
   "packageManager": "npm@10.8.2",
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/web"
   ],
   "scripts": {
     "dev": "next dev",
