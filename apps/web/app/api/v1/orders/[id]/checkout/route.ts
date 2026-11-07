@@ -58,6 +58,7 @@ export async function POST(
         .in("id", itemIds);
 
       const priceMap = new Map((dbMenuItems || []).map((m: any) => [m.id, m]));
+      const healPromises: Promise<any>[] = [];
 
       for (const item of zeroPriceItems) {
         const db = priceMap.get(item.menu_item_id);
@@ -75,15 +76,22 @@ export async function POST(
           item.unit_price_snapshot = unit;
           item.tax_rate_snapshot = taxRate;
 
-          await admin
-            .from("order_items")
-            .update({
-              line_total: priced.lineTotal,
-              unit_price_snapshot: unit,
-              tax_rate_snapshot: taxRate,
-            })
-            .eq("id", item.id);
+          healPromises.push(
+            Promise.resolve(
+              admin
+                .from("order_items")
+                .update({
+                  line_total: priced.lineTotal,
+                  unit_price_snapshot: unit,
+                  tax_rate_snapshot: taxRate,
+                })
+                .eq("id", item.id),
+            ),
+          );
         }
+      }
+      if (healPromises.length > 0) {
+        await Promise.all(healPromises);
       }
     }
 
@@ -146,7 +154,6 @@ export async function POST(
       allowPartial: body.allowPartial ?? false,
     });
 
-    // 3. Record new payments
     const paymentRows = settlement.payments.map((p) => ({
       order_id: order.id,
       method: p.method,
@@ -156,47 +163,54 @@ export async function POST(
       reference: p.reference || null,
     }));
 
-    if (paymentRows.length > 0) {
-      await admin.from("payments").insert(paymentRows);
-    }
-
+    // 3. Parallelize payments insert, order status update, and table release
     const totalPaidAcrossAll = round2(existingPaid + settlement.paidNow);
     const fullyPaid = totalPaidAcrossAll >= bill.totalDue;
 
-    // 4. Update Order
-    const { data: updatedOrder, error: updateError } = await admin
-      .from("orders")
-      .update({
-        status: fullyPaid ? "PAID" : "OPEN",
-        subtotal: bill.subtotal,
-        discount_amount: bill.discountAmount,
-        discount_percent: bill.discountPercent,
-        coupon_code: appliedCouponCode,
-        tax_amount: bill.taxAmount,
-        tip_amount: bill.tipAmount,
-        loyalty_points_redeemed: Number(body.loyaltyPointsToRedeem || 0),
-        loyalty_discount_amount: bill.loyaltyDiscountAmount,
-        total_amount: bill.totalDue,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", order.id)
-      .select()
-      .single();
-
-    if (updateError || !updatedOrder) {
-      throw new Error(updateError?.message || "Failed to update order");
-    }
-
-    // 5. Release Table if fully paid
-    if (fullyPaid && order.table_id) {
-      await admin
-        .from("tables")
+    const updateOrderPromise = Promise.resolve(
+      admin
+        .from("orders")
         .update({
-          status: "AVAILABLE",
-          status_since: new Date().toISOString(),
+          status: fullyPaid ? "PAID" : "OPEN",
+          subtotal: bill.subtotal,
+          discount_amount: bill.discountAmount,
+          discount_percent: bill.discountPercent,
+          coupon_code: appliedCouponCode,
+          tax_amount: bill.taxAmount,
+          tip_amount: bill.tipAmount,
+          loyalty_points_redeemed: Number(body.loyaltyPointsToRedeem || 0),
+          loyalty_discount_amount: bill.loyaltyDiscountAmount,
+          total_amount: bill.totalDue,
+          updated_at: new Date().toISOString(),
         })
-        .eq("id", order.table_id);
-    }
+        .eq("id", order.id)
+        .select()
+        .single(),
+    );
+
+    const insertPaymentsPromise =
+      paymentRows.length > 0
+        ? Promise.resolve(admin.from("payments").insert(paymentRows))
+        : Promise.resolve({ error: null });
+
+    const releaseTablePromise =
+      fullyPaid && order.table_id
+        ? Promise.resolve(
+            admin
+              .from("tables")
+              .update({
+                status: "AVAILABLE",
+                status_since: new Date().toISOString(),
+              })
+              .eq("id", order.table_id),
+          )
+        : Promise.resolve({ error: null });
+
+    const [{ data: updatedOrder, error: updateError }] = await Promise.all([
+      updateOrderPromise,
+      insertPaymentsPromise,
+      releaseTablePromise,
+    ]);
 
     return NextResponse.json({
       id: updatedOrder.id,

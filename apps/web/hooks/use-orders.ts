@@ -263,9 +263,8 @@ export function useOpenOrdersForTable(branchId: string | null, tableId: string |
     queryKey: ["orders", "open", branchId, "table", tableId],
     queryFn: () => api.get<OpenOrder[]>(`/orders?branchId=${branchId}&tableId=${tableId}`),
     enabled: !!branchId && !!tableId,
-    // A table's bills change from other terminals; never trust a cached list.
-    staleTime: 0,
-    refetchOnMount: "always",
+    staleTime: 15_000,
+    placeholderData: (previous) => previous,
   });
 }
 

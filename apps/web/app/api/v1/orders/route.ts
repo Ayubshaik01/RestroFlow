@@ -100,15 +100,6 @@ export async function POST(req: Request) {
 
     const admin = createAdminClient();
 
-    // 1. Fetch branch tax configuration
-    const { data: branch } = await admin
-      .from("branches")
-      .select("tax_regime, tax_mode")
-      .eq("id", branchId)
-      .maybeSingle();
-
-    const taxMode = branch?.tax_mode || "INCLUSIVE";
-
     // 2. Generate Order Number
     const orderNumber = `${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
 
@@ -122,23 +113,30 @@ export async function POST(req: Request) {
     const itemIds = lineInputs.map((i: any) => i.menuItemId || i.id).filter(Boolean);
     const allModIds = lineInputs.flatMap((i: any) => i.modifierIds || []).filter(Boolean);
 
-    // Fetch menu items from DB
-    const { data: menuItems } = itemIds.length > 0
-      ? await admin
-          .from("menu_items")
-          .select("id, name, price, tax_rate_percent, half_price")
-          .in("id", itemIds)
-      : { data: [] };
-    const menuMap = new Map((menuItems || []).map((m: any) => [m.id, m]));
+    // Ultra-Fast: Parallelize branch config, menu items, and modifier options lookups
+    const [branchRes, menuItemsRes, modOptionsRes] = await Promise.all([
+      admin
+        .from("branches")
+        .select("tax_regime, tax_mode")
+        .eq("id", branchId)
+        .maybeSingle(),
+      itemIds.length > 0
+        ? admin
+            .from("menu_items")
+            .select("id, name, price, tax_rate_percent, half_price")
+            .in("id", itemIds)
+        : Promise.resolve({ data: [] }),
+      allModIds.length > 0
+        ? admin
+            .from("modifier_options")
+            .select("id, name, price_adjustment")
+            .in("id", allModIds)
+        : Promise.resolve({ data: [] }),
+    ]);
 
-    // Fetch modifier options from DB
-    const { data: modifierOptions } = allModIds.length > 0
-      ? await admin
-          .from("modifier_options")
-          .select("id, name, price_adjustment")
-          .in("id", allModIds)
-      : { data: [] };
-    const modMap = new Map((modifierOptions || []).map((m: any) => [m.id, m]));
+    const taxMode = branchRes?.data?.tax_mode || "INCLUSIVE";
+    const menuMap = new Map(((menuItemsRes?.data as any[]) || []).map((m: any) => [m.id, m]));
+    const modMap = new Map(((modOptionsRes?.data as any[]) || []).map((m: any) => [m.id, m]));
 
     let subtotal = 0;
     let taxAmount = 0;
@@ -266,8 +264,8 @@ export async function POST(req: Request) {
       }
     }
 
-    // 6. Create Kitchen Ticket (KOT)
-    const { data: kot } = await admin
+    // 6. Fast Async / Parallel KOT & Table update
+    const kotPromise = admin
       .from("kots")
       .insert({
         order_id: newOrder.id,
@@ -276,27 +274,29 @@ export async function POST(req: Request) {
         status: "NEW",
       })
       .select("id")
-      .single();
+      .single()
+      .then(async ({ data: kot }) => {
+        if (kot && insertedItems && insertedItems.length > 0) {
+          const kotItems = insertedItems.map((item: any) => ({
+            kot_id: kot.id,
+            order_item_id: item.id,
+            quantity: item.quantity,
+          }));
+          await admin.from("kot_items").insert(kotItems);
+        }
+      });
 
-    if (kot && insertedItems) {
-      const kotItems = insertedItems.map((item: any) => ({
-        kot_id: kot.id,
-        order_item_id: item.id,
-        quantity: item.quantity,
-      }));
-      await admin.from("kot_items").insert(kotItems);
-    }
+    const tablePromise = body.tableId
+      ? admin
+          .from("tables")
+          .update({
+            status: "OCCUPIED",
+            status_since: new Date().toISOString(),
+          })
+          .eq("id", body.tableId)
+      : Promise.resolve();
 
-    // 7. Mark Table as OCCUPIED if Dine-In
-    if (body.tableId) {
-      await admin
-        .from("tables")
-        .update({
-          status: "OCCUPIED",
-          status_since: new Date().toISOString(),
-        })
-        .eq("id", body.tableId);
-    }
+    await Promise.all([kotPromise, tablePromise]);
 
     return NextResponse.json({
       id: newOrder.id,

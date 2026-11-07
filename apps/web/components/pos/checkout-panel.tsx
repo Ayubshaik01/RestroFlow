@@ -147,15 +147,46 @@ export function CheckoutPanel({
   // further adjustments, so none are sent from then on.
   const hasPayments = (live?.payments.length ?? 0) > 0;
 
-  // The server prices the bill: this is the single source for the figures on
-  // screen, on the printed bill, and at checkout.
+  // Instant local bill preview fallback so the cashier never waits on network roundtrip to take payment
+  const instantBill = useMemo<BillPreview>(() => {
+    const sub = Number(order.subtotal || 0);
+    const tax = Number(order.taxAmount || 0);
+    const discPct = Number(discountPercent) || 0;
+    const discAmt = discPct > 0 ? (sub * discPct) / 100 : Number(order.discountAmount || 0);
+    const tip = Number(tipAmount) || Number(order.tipAmount || 0);
+    const totalDue = round2(Math.max(0, sub - discAmt + tax + tip));
+    const paid = (order.payments || []).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const balanceDue = round2(Math.max(0, totalDue - paid));
+
+    return {
+      locked: (order.payments?.length ?? 0) > 0,
+      status: order.status,
+      subtotal: sub,
+      discountAmount: discAmt,
+      discountPercent: discPct,
+      discountType: "PERCENT",
+      discountValue: discPct,
+      couponCode: appliedCoupon || null,
+      promotionName: null,
+      taxAmount: tax,
+      loyaltyPointsRedeemed: Number(pointsToRedeem) || 0,
+      loyaltyDiscountAmount: 0,
+      tipAmount: tip,
+      deliveryFee: Number(order.deliveryFee || 0),
+      totalDue,
+      amountPaid: paid,
+      balanceDue,
+    };
+  }, [order, discountPercent, tipAmount, pointsToRedeem, appliedCoupon]);
+
+  // The server prices the bill: this syncs authoritative figures in the background
   const billQuery = useBillPreview(
     branchId,
     order.id,
     hasPayments ? {} : settled,
     order.status === "OPEN",
   );
-  const bill: BillPreview | undefined = billQuery.data;
+  const bill: BillPreview = billQuery.data || instantBill;
   const locked = (bill?.locked ?? false) || hasPayments;
   const repricing = adjustments !== settled;
 

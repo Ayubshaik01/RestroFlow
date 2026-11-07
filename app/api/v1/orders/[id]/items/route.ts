@@ -32,38 +32,38 @@ export async function POST(
       return NextResponse.json({ message: "Cannot add items to a closed order" }, { status: 400 });
     }
 
-    // 2. Fetch branch tax config
-    const { data: branch } = await admin
-      .from("branches")
-      .select("tax_mode")
-      .eq("id", order.branch_id)
-      .maybeSingle();
-
-    const taxMode = branch?.tax_mode || "INCLUSIVE";
+    // 2 & 3. Parallel fetch of branch tax config, menu items, and modifier options
     const lineInputs = body.items || [];
     if (!Array.isArray(lineInputs) || lineInputs.length === 0) {
       return NextResponse.json({ message: "No items provided" }, { status: 400 });
     }
 
-    // 3. Fetch menu items and modifier options from DB
     const itemIds = lineInputs.map((i: any) => i.menuItemId || i.id).filter(Boolean);
     const allModIds = lineInputs.flatMap((i: any) => i.modifierIds || []).filter(Boolean);
 
-    const { data: menuItems } = itemIds.length > 0
-      ? await admin
-          .from("menu_items")
-          .select("id, name, price, tax_rate_percent, half_price")
-          .in("id", itemIds)
-      : { data: [] };
-    const menuMap = new Map((menuItems || []).map((m: any) => [m.id, m]));
+    const [branchRes, menuItemsRes, modOptionsRes] = await Promise.all([
+      admin
+        .from("branches")
+        .select("tax_mode")
+        .eq("id", order.branch_id)
+        .maybeSingle(),
+      itemIds.length > 0
+        ? admin
+            .from("menu_items")
+            .select("id, name, price, tax_rate_percent, half_price")
+            .in("id", itemIds)
+        : Promise.resolve({ data: [] }),
+      allModIds.length > 0
+        ? admin
+            .from("modifier_options")
+            .select("id, name, price_adjustment")
+            .in("id", allModIds)
+        : Promise.resolve({ data: [] }),
+    ]);
 
-    const { data: modifierOptions } = allModIds.length > 0
-      ? await admin
-          .from("modifier_options")
-          .select("id, name, price_adjustment")
-          .in("id", allModIds)
-      : { data: [] };
-    const modMap = new Map((modifierOptions || []).map((m: any) => [m.id, m]));
+    const taxMode = branchRes?.data?.tax_mode || "INCLUSIVE";
+    const menuMap = new Map(((menuItemsRes?.data as any[]) || []).map((m: any) => [m.id, m]));
+    const modMap = new Map(((modOptionsRes?.data as any[]) || []).map((m: any) => [m.id, m]));
 
     const pricedItems = lineInputs.map((input: any) => {
       const menuItemId = input.menuItemId || input.id;

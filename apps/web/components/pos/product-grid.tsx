@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { QueryError } from "@/components/ui/query-error";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,15 +19,23 @@ export function ProductGrid({
   const { data: categories } = useCategories(branchId);
   const [activeCategoryId, setActiveCategoryId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
-  const { data: items, isLoading, isError, error, refetch, isFetching } = useMenuItems(branchId, activeCategoryId);
+  // Ultra-fast: Fetch all items once, filter in-memory in 0ms!
+  const { data: allItems, isLoading, isError, error, refetch, isFetching } = useMenuItems(branchId);
 
-  const filtered = items?.filter((i) => {
-    const matchesSearch = i.name.toLowerCase().includes(search.toLowerCase());
-    if (activeCategoryId === "combos") {
-      return matchesSearch && i.isCombo;
-    }
-    return matchesSearch;
-  });
+  const filtered = useMemo(() => {
+    if (!allItems) return [];
+    const q = search.trim().toLowerCase();
+    return allItems.filter((i) => {
+      const matchesCategory =
+        !activeCategoryId ||
+        activeCategoryId === "all" ||
+        (activeCategoryId === "combos" ? i.isCombo : i.categoryId === activeCategoryId);
+
+      if (!matchesCategory) return false;
+      if (!q) return true;
+      return i.name.toLowerCase().includes(q);
+    });
+  }, [allItems, activeCategoryId, search]);
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -91,13 +99,13 @@ export function ProductGrid({
         </nav>
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {isError && !items ? (
+      {isError && !allItems ? (
         <QueryError error={error} what="the menu" onRetry={() => void refetch()} retrying={isFetching} />
       ) : (
       <div className="grid flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto pb-4 sm:grid-cols-3 lg:grid-cols-3 lg:gap-4 xl:grid-cols-4 2xl:grid-cols-5">
         {isLoading &&
           Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
-        {filtered?.map((item) => (
+        {filtered.map((item) => (
           <button
             key={item.id}
             onClick={() => onSelect(item)}
@@ -119,18 +127,13 @@ export function ProductGrid({
                 {formatCurrency(item.price)}
               </span>
               {item.halfPrice != null && (
-                <span className="hidden text-[11px] tabular-nums text-muted-foreground lg:inline">
+                <span className="text-xs text-muted-foreground tabular-nums">
                   Half {formatCurrency(item.halfPrice)}
                 </span>
               )}
             </span>
           </button>
         ))}
-        {filtered?.length === 0 && !isLoading && (
-          <p className="col-span-full py-10 text-center text-sm text-muted-foreground">
-            {search ? <>No items match &quot;{search}&quot;</> : "No items in this category yet"}
-          </p>
-        )}
       </div>
       )}
       </div>

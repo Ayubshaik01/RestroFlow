@@ -43,8 +43,7 @@ export default function MenuPage() {
   const canManage = hasPermission(me?.user, "menu.manage");
   const { data: categories, isLoading: categoriesLoading } = useCategories(branchId);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>(undefined);
-  const { data: items, isLoading: itemsLoading } = useMenuItems(branchId, selectedCategoryId);
-  const { data: allItems } = useMenuItems(branchId);
+  const { data: allItems, isLoading: itemsLoading } = useMenuItems(branchId);
   const deleteItem = useDeleteMenuItem(branchId);
   const deleteCategory = useDeleteCategory(branchId);
   const [comboItem, setComboItem] = useState<MenuItem | null>(null);
@@ -54,13 +53,15 @@ export default function MenuPage() {
   const selectedCategory = categories?.find((c) => c.id === selectedCategoryId);
   const comboCount = useMemo(() => (allItems ?? []).filter((i) => i.isCombo).length, [allItems]);
 
-  // If "combos" is selected, filter from allItems to strictly show combo meals
+  // Instant in-memory filter: 0ms category switching without network delay!
   const displayedItems = useMemo(() => {
+    if (!allItems) return [];
+    if (!selectedCategoryId) return allItems;
     if (selectedCategoryId === "combos") {
-      return (allItems ?? []).filter((i) => i.isCombo);
+      return allItems.filter((i) => i.isCombo);
     }
-    return items ?? [];
-  }, [selectedCategoryId, allItems, items]);
+    return allItems.filter((i) => i.categoryId === selectedCategoryId);
+  }, [selectedCategoryId, allItems]);
 
   const onDeleteCategory = (category: MenuCategory) => {
     if (!confirm(`Delete the "${category.name}" category? This cannot be undone.`)) return;

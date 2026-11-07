@@ -103,7 +103,7 @@ function PosPageInner() {
   // new items (default: the newest). Until the table's bills are loaded we do
   // not know whether this is a new bill or a new round, so submitting waits.
   const checkingTable =
-    orderType === "DINE_IN" && !!tableId && (openBillsQuery.isPending || openBillsQuery.isFetching);
+    orderType === "DINE_IN" && !!tableId && openBillsQuery.isLoading && !openBillsQuery.data;
   const existingOrder =
     existingOrders?.find((o) => o.id === selectedBillId) ?? existingOrders?.[0];
 
