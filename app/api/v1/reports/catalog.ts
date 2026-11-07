@@ -24,3 +24,4 @@ export const REPORT_CATALOG: ReportCatalogItem[] = [
   { key: "waste", title: "Inventory Waste Log", group: "Inventory" },
   { key: "inventory-valuation", title: "Inventory Valuation", group: "Inventory" },
 ];
+

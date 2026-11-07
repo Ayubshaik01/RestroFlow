@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { supabase } from "@/lib/supabase/client";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { realtimeInvalidations } from "@/lib/realtime-keys";
 import { setRealtimeState } from "@/lib/realtime-status";
 
@@ -15,7 +15,10 @@ export function useRealtime(branchId: string | null) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!branchId) return;
+    if (!branchId || !isSupabaseConfigured()) {
+      setRealtimeState("offline");
+      return;
+    }
 
     setRealtimeState("connecting");
 
