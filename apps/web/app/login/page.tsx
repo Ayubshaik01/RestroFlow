@@ -27,8 +27,15 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<LoginDto>({ resolver: zodResolver(loginSchema) });
+
+  const fillAndLogin = (email: string, pass: string) => {
+    setValue("email", email);
+    setValue("password", pass);
+    onSubmit({ email, password: pass });
+  };
 
   const onSubmit = (dto: LoginDto) => {
     setError(null);
@@ -145,6 +152,53 @@ export default function LoginPage() {
           <Button type="submit" className="mt-2 h-12 text-base font-semibold" disabled={login.isPending}>
             {login.isPending ? "Signing in…" : "Sign in to RestroFlow"}
           </Button>
+
+          <div className="relative my-2 text-center text-xs text-muted-foreground after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t after:border-border">
+            <span className="relative z-10 bg-background px-2 text-muted-foreground">
+              Or quick test accounts
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-10 border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/15 text-xs font-medium justify-between px-3"
+              onClick={() => fillAndLogin("owner@demo.local", "RestroFlow@123")}
+              disabled={login.isPending}
+            >
+              <span className="flex items-center gap-1.5 font-semibold text-orange-600 dark:text-orange-400">
+                👑 Demo Owner
+              </span>
+              <span className="text-[11px] text-muted-foreground font-mono">owner@demo.local</span>
+            </Button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 text-xs justify-between px-2.5"
+                onClick={() => fillAndLogin("manager@demo.local", "RestroFlow@123")}
+                disabled={login.isPending}
+              >
+                <span className="font-medium">📋 Manager</span>
+                <span className="text-[10px] text-muted-foreground">manager@</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 text-xs justify-between px-2.5"
+                onClick={() => fillAndLogin("cashier@demo.local", "RestroFlow@123")}
+                disabled={login.isPending}
+              >
+                <span className="font-medium">💳 Cashier</span>
+                <span className="text-[10px] text-muted-foreground">cashier@</span>
+              </Button>
+            </div>
+          </div>
         </form>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">

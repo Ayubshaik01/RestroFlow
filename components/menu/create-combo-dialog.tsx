@@ -167,7 +167,22 @@ export function CreateComboDialog({
       return;
     }
 
-    const finalCatId = categoryId || defaultCategory;
+    const realCategory =
+      categories.find(
+        (c) =>
+          c.id !== "combos" &&
+          (c.id === categoryId ||
+            c.name.toLowerCase().includes("combo") ||
+            c.name.toLowerCase().includes("meal")),
+      ) || categories.find((c) => c.id !== "combos");
+
+    const finalCatId =
+      categoryId && categoryId !== "combos"
+        ? categoryId
+        : realCategory
+          ? realCategory.id
+          : "cat-starters";
+
     if (!finalCatId) {
       toast.error("Please choose or add a menu category first");
       return;

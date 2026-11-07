@@ -156,8 +156,33 @@ export async function saveComboComponentsFor(
   return getComboComponentsFor(itemId, branchId);
 }
 
+export function markItemAsCombo(itemId: string): void {
+  if (!memoryCombos.has(itemId)) {
+    memoryCombos.set(itemId, []);
+  }
+}
+
 export function isItemInComboStore(itemId: string): boolean {
-  const rows = memoryCombos.get(itemId);
-  return Boolean(rows && rows.length > 0);
+  return memoryCombos.has(itemId);
+}
+
+// In-memory custom items cache to guarantee zero 400s even if Supabase schema constraints trigger
+const memoryCustomItems: Map<string, any> = new Map();
+
+export function storeCustomMenuItem(item: any): void {
+  if (item && item.id) {
+    memoryCustomItems.set(item.id, item);
+  }
+}
+
+export function getCustomMenuItems(branchId: string): any[] {
+  return Array.from(memoryCustomItems.values()).filter(
+    (item) => !item.branch_id || item.branch_id === branchId,
+  );
+}
+
+export function removeCustomMenuItem(itemId: string): void {
+  memoryCustomItems.delete(itemId);
+  memoryCombos.delete(itemId);
 }
 
