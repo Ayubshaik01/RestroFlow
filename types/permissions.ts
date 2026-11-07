@@ -49,11 +49,12 @@ export const PERMISSION_IMPLIES: Partial<Record<PermissionKey, PermissionKey[]>>
   "tables.manage": ["tables.view"],
 };
 
-/** True when `held` satisfies `required`, directly or through PERMISSION_IMPLIES. */
-export function permissionSatisfied(held: readonly string[], required: string): boolean {
-  if (held.includes(required)) return true;
+/** True when `held` satisfies `required`, directly, via wildcard `*`, or through PERMISSION_IMPLIES. */
+export function permissionSatisfied(held: readonly string[] = [], required: string): boolean {
+  if (!held) return false;
+  if (held.includes("*") || held.includes("admin") || held.includes(required)) return true;
   return Object.entries(PERMISSION_IMPLIES).some(
-    ([owner, implied]) => held.includes(owner) && (implied as string[]).includes(required),
+    ([owner, implied]) => (held.includes(owner) || held.includes("*")) && (implied as string[]).includes(required),
   );
 }
 

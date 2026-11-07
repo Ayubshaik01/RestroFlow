@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SessionUser } from "@/types/auth";
+import { PERMISSIONS } from "@/types/permissions";
 
 export const SESSION_COOKIE_NAME = "restroflow_session";
 
@@ -48,11 +49,16 @@ export async function getServerSessionUser(): Promise<SessionUser | null> {
         .select("permissions(key)")
         .eq("role_id", userProfile.role_id);
 
-      const permissions = (rolePerms || [])
+      let permissions = (rolePerms || [])
         .map((rp: any) => rp.permissions?.key)
         .filter(Boolean);
 
       const roleData: any = userProfile.roles;
+      const roleName = (roleData?.name || "OWNER").toUpperCase();
+
+      if (roleName === "OWNER" || roleName === "ADMINISTRATOR" || permissions.length === 0) {
+        permissions = ["*", ...PERMISSIONS.map((p) => p.key)];
+      }
 
       return {
         id: userProfile.id,
@@ -60,7 +66,7 @@ export async function getServerSessionUser(): Promise<SessionUser | null> {
         name: userProfile.name,
         roleId: userProfile.role_id,
         roleName: roleData?.name || "OWNER",
-        permissions: permissions.length > 0 ? permissions : ["*"],
+        permissions,
       };
     }
 
@@ -71,33 +77,10 @@ export async function getServerSessionUser(): Promise<SessionUser | null> {
       name: "Demo Owner",
       roleId: "role-owner",
       roleName: "OWNER",
-      permissions: [
-        "sales.view",
-        "dashboard.sales.view",
-        "orders.create",
-        "orders.edit",
-        "orders.cancel",
-        "orders.accept",
-        "discounts.apply",
-        "refunds.process",
-        "bills.print",
-        "tables.view",
-        "tables.manage",
-        "menu.view",
-        "menu.manage",
-        "inventory.manage",
-        "reports.access",
-        "users.manage",
-        "kds.manage",
-        "reservations.manage",
-        "settings.manage",
-        "customers.manage",
-        "roles.manage",
-      ],
+      permissions: ["*", ...PERMISSIONS.map((p) => p.key)],
     };
   } catch (error) {
     console.error("Error resolving server session:", error);
     return null;
   }
 }
-
