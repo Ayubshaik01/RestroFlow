@@ -21,7 +21,13 @@ export function ProductGrid({
   const [search, setSearch] = useState("");
   const { data: items, isLoading, isError, error, refetch, isFetching } = useMenuItems(branchId, activeCategoryId);
 
-  const filtered = items?.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = items?.filter((i) => {
+    const matchesSearch = i.name.toLowerCase().includes(search.toLowerCase());
+    if (activeCategoryId === "combos") {
+      return matchesSearch && i.isCombo;
+    }
+    return matchesSearch;
+  });
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -40,7 +46,11 @@ export function ProductGrid({
           value={activeCategoryId ?? "all"}
           onChange={(id) => setActiveCategoryId(id === "all" ? undefined : id)}
           desktopListClassName="justify-start lg:h-auto lg:flex-wrap"
-          items={[{ id: "all", label: "All" }, ...categories.map((c) => ({ id: c.id, label: c.name, hint: `${c._count.items} items` }))]}
+          items={[
+            { id: "all", label: "All" },
+            { id: "combos", label: "🍱 Combos" },
+            ...categories.map((c) => ({ id: c.id, label: c.name, hint: `${c._count.items} items` })),
+          ]}
         />
       )}
 
@@ -50,7 +60,11 @@ export function ProductGrid({
           aria-label="Category"
           className="hidden w-52 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border pr-3 lg:flex xl:w-60"
         >
-          {[{ id: undefined as string | undefined, name: "All", count: undefined as number | undefined }, ...categories.map((c) => ({ id: c.id as string | undefined, name: c.name, count: c._count.items as number | undefined }))].map((c) => {
+          {[
+            { id: undefined as string | undefined, name: "All", count: undefined as number | undefined },
+            { id: "combos" as string | undefined, name: "🍱 Combos & Meals", count: undefined as number | undefined },
+            ...categories.map((c) => ({ id: c.id as string | undefined, name: c.name, count: c._count.items as number | undefined })),
+          ].map((c) => {
             const active = c.id === activeCategoryId;
             return (
               <button

@@ -38,7 +38,9 @@ export async function GET(req: Request) {
     .eq("branch_id", branchId)
     .order("sort_order", { ascending: true });
 
-  if (categoryId) {
+  if (categoryId === "combos") {
+    query = query.eq("is_combo", true);
+  } else if (categoryId) {
     query = query.eq("category_id", categoryId);
   }
 
