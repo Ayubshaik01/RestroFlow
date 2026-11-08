@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { supabase } from "@/lib/supabase/client";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useNotificationMute } from "./use-notification-mute";
 import { playNotificationFeedback } from "@/lib/notification-feedback";
 
@@ -17,7 +17,7 @@ export function useKdsSound(branchId: string | null) {
   }, [muted]);
 
   useEffect(() => {
-    if (!branchId) return;
+    if (!branchId || !isSupabaseConfigured()) return;
 
     const chime = () => {
       if (!mutedRef.current) playNotificationFeedback();
@@ -46,7 +46,11 @@ export function useKdsSound(branchId: string | null) {
           if (payload.new?.acceptance === "PENDING") chime();
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.debug("KDS sound realtime status:", status);
+        }
+      });
 
     return () => {
       void supabase.removeChannel(channel);

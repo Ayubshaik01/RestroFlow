@@ -3,7 +3,7 @@
 import { Bell, CheckCheck, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase/client";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -50,7 +50,7 @@ export function NotificationBell() {
   }, [muted]);
 
   useEffect(() => {
-    if (!branchId) return;
+    if (!branchId || !isSupabaseConfigured()) return;
 
     const channel = supabase
       .channel(`bell-notifications-${branchId}`)
@@ -68,7 +68,11 @@ export function NotificationBell() {
           if (!mutedRef.current) playNotificationFeedback();
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.debug("Notification bell realtime status:", status);
+        }
+      });
 
     return () => {
       void supabase.removeChannel(channel);

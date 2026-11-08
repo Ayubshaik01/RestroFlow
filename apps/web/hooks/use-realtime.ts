@@ -78,11 +78,14 @@ export function useRealtime(branchId: string | null) {
           );
         },
       )
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         if (status === "SUBSCRIBED") {
           setRealtimeState("live");
-        } else if (status === "CLOSED" || status === "CHANNEL_ERROR") {
+        } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           setRealtimeState("offline");
+          if (err) {
+            console.debug("Realtime connection state:", status);
+          }
         }
       });
 

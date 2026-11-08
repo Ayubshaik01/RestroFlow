@@ -183,7 +183,7 @@ export default function UserGuidePage() {
         <div className="rounded-xl border border-border/60 bg-card p-4 text-xs font-mono">
           <p>NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co</p>
           <p>NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...</p>
-          <p>SUPABASE_SERVICE_ROLE_KEY=sb_secret_...</p>
+          <p>SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here</p>
         </div>
         <p className="text-sm">
           Database migrations, schema definitions, and seed data reside under the{" "}
