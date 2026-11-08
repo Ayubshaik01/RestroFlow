@@ -8,12 +8,7 @@ export interface BudgetItem {
   amount: number;
 }
 
-const memoryBudgets: Map<string, BudgetItem> = new Map([
-  ["b-1", { id: "b-1", branchId: "demo-branch", month: new Date().toISOString().slice(0, 7), category: "Rent", amount: 2500 }],
-  ["b-2", { id: "b-2", branchId: "demo-branch", month: new Date().toISOString().slice(0, 7), category: "Supplies", amount: 1800 }],
-  ["b-3", { id: "b-3", branchId: "demo-branch", month: new Date().toISOString().slice(0, 7), category: "Utilities", amount: 600 }],
-  ["b-4", { id: "b-4", branchId: "demo-branch", month: new Date().toISOString().slice(0, 7), category: "Marketing", amount: 400 }],
-]);
+const memoryBudgets: Map<string, BudgetItem> = new Map();
 
 export async function getBudgetsForMonth(branchId: string, month: string): Promise<BudgetItem[]> {
   try {

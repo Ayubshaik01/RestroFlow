@@ -61,9 +61,9 @@ const TAB_GROUPS = [
   {
     name: "Financial Statements",
     tabs: [
+      { id: "cash flow", label: "Cash Flow & Payment Modes", icon: DollarSign },
       { id: "profit & loss", label: "Income Statement (P&L)", icon: TrendingUp },
       { id: "balance sheet", label: "Balance Sheet", icon: Scale },
-      { id: "cash flow", label: "Cash Flow Statement", icon: DollarSign },
     ],
   },
   {
@@ -543,14 +543,19 @@ export default function AccountingPage() {
 
         {/* Quick Action Navigation Buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant={tab === "cash flow" ? "default" : "outline"}
+            className="h-8 text-xs font-semibold"
+            onClick={() => setTab("cash flow")}
+          >
+            <DollarSign className="mr-1 h-3.5 w-3.5 text-emerald-500" /> Cash Flow &amp; Payments
+          </Button>
           <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setTab("expenses")}>
             <Plus className="mr-1 h-3 w-3" /> Record Expense
           </Button>
           <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setTab("vendor bills")}>
             <Plus className="mr-1 h-3 w-3" /> Vendor Bill
-          </Button>
-          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setTab("general ledger")}>
-            <Plus className="mr-1 h-3 w-3" /> Journal Entry
           </Button>
           <Button size="sm" className="h-8 text-xs" onClick={() => setTab("cash close")}>
             <Wallet className="mr-1 h-3 w-3" /> Close Till

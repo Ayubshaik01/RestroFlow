@@ -15,25 +15,21 @@ export async function GET(req: Request) {
 
   const admin = createAdminClient();
 
-  let totalSales = 12450.0;
-  let tax5 = 450.0;
-  let tax12 = 120.0;
-  let tax18 = 65.0;
+  let totalSales = 0;
+  let tax5 = 0;
+  let tax12 = 0;
+  let tax18 = 0;
 
   try {
     const { data: items } = await admin
       .from("order_items")
-      .select("tax_rate_snapshot, line_total, orders!inner(branch_id, created_at)")
+      .select("tax_rate_snapshot, line_total, orders!inner(branch_id, created_at, status)")
       .eq("orders.branch_id", branchId)
+      .in("orders.status", ["PAID", "COMPLETED", "DELIVERED"])
       .gte("orders.created_at", `${from}T00:00:00.000Z`)
       .lte("orders.created_at", `${to}T23:59:59.999Z`);
 
     if (items && items.length > 0) {
-      tax5 = 0;
-      tax12 = 0;
-      tax18 = 0;
-      totalSales = 0;
-
       items.forEach((i: any) => {
         const rate = Number(i.tax_rate_snapshot || 5);
         const lineTotal = Number(i.line_total || 0);
@@ -44,17 +40,37 @@ export async function GET(req: Request) {
         else tax18 += taxVal;
       });
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.error("Tax audit error:", err);
   }
 
+  totalSales = Math.round(totalSales * 100) / 100;
+  tax5 = Math.round(tax5 * 100) / 100;
+  tax12 = Math.round(tax12 * 100) / 100;
+  tax18 = Math.round(tax18 * 100) / 100;
   const outputTaxTotal = Math.round((tax5 + tax12 + tax18) * 100) / 100;
 
-  // Input Tax Credit (ITC) from raw material / supplies procurement
-  const itcSupplies = Math.round(outputTaxTotal * 0.45 * 100) / 100;
-  const itcPackaging = Math.round(outputTaxTotal * 0.08 * 100) / 100;
-  const itcCapitalGoods = Math.round(outputTaxTotal * 0.05 * 100) / 100;
-  const totalItc = Math.round((itcSupplies + itcPackaging + itcCapitalGoods) * 100) / 100;
+  // Real Input Tax Credit (ITC) calculated from registered procurement expenses
+  let totalItc = 0;
+  try {
+    const { data: exp } = await admin
+      .from("expenses")
+      .select("amount")
+      .eq("branch_id", branchId)
+      .gte("spent_on", from)
+      .lte("spent_on", to);
+
+    if (exp && exp.length > 0) {
+      const expTotal = exp.reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
+      totalItc = Math.round(expTotal * 0.05 * 100) / 100; // standard 5% input credit estimate
+    }
+  } catch {
+    //
+  }
+
+  const itcSupplies = Math.round(totalItc * 0.8 * 100) / 100;
+  const itcPackaging = Math.round(totalItc * 0.2 * 100) / 100;
+  const itcCapitalGoods = 0;
 
   const netTaxPayable = Math.max(0, Math.round((outputTaxTotal - totalItc) * 100) / 100);
 
@@ -63,50 +79,45 @@ export async function GET(req: Request) {
       code: "996331",
       description: "Restaurant Dining & Service (Food & Non-Alcoholic)",
       rate: "5%",
-      taxableValue: Math.round(totalSales * 0.75 * 100) / 100,
+      taxableValue: Math.round(totalSales * 0.8 * 100) / 100,
       taxAmount: Math.round(tax5 * 100) / 100,
     },
     {
       code: "996332",
       description: "Takeaway & Delivery Counter Services",
       rate: "5%",
-      taxableValue: Math.round(totalSales * 0.15 * 100) / 100,
-      taxAmount: Math.round(tax5 * 0.2 * 100) / 100,
+      taxableValue: Math.round(totalSales * 0.2 * 100) / 100,
+      taxAmount: 0,
     },
-    {
-      code: "2202",
-      description: "Packaged Mineral Waters & Carbonated Beverages",
-      rate: "12% / 18%",
-      taxableValue: Math.round(totalSales * 0.1 * 100) / 100,
-      taxAmount: Math.round((tax12 + tax18) * 100) / 100,
-    },
+    ...(tax12 > 0 || tax18 > 0
+      ? [
+          {
+            code: "2202",
+            description: "Packaged Mineral Waters & Carbonated Beverages",
+            rate: "12% / 18%",
+            taxableValue: Math.round((tax12 + tax18) * 6 * 100) / 100,
+            taxAmount: Math.round((tax12 + tax18) * 100) / 100,
+          },
+        ]
+      : []),
   ];
 
   return NextResponse.json({
     period: { from, to },
     outputTax: {
-      totalTaxableSales: Math.round(totalSales * 100) / 100,
-      rates: [
-        { rate: "5% (Standard Restaurant)", tax: Math.round(tax5 * 100) / 100 },
-        { rate: "12% (Packaged Beverages)", tax: Math.round(tax12 * 100) / 100 },
-        { rate: "18% (Specialty / Aerated)", tax: Math.round(tax18 * 100) / 100 },
-      ],
-      totalOutputTax: outputTaxTotal,
+      salesTaxable: totalSales,
+      tax5,
+      tax12,
+      tax18,
+      totalOutput: outputTaxTotal,
     },
     inputTaxCredit: {
-      supplies: itcSupplies,
-      packaging: itcPackaging,
-      capitalGoods: itcCapitalGoods,
+      itcSupplies,
+      itcPackaging,
+      itcCapitalGoods,
       totalItc,
     },
-    settlement: {
-      grossLiability: outputTaxTotal,
-      itcUtilized: totalItc,
-      netPayable: netTaxPayable,
-      dueDate: "20th of succeeding month",
-      status: "COMPLIANT",
-    },
+    netTaxPayable,
     hsnSummary,
   });
 }
-

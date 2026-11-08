@@ -13,75 +13,70 @@ export interface BankTransactionRecord {
   createdAt: string;
 }
 
-const memoryBankTransactions: Map<string, BankTransactionRecord> = new Map([
-  [
-    "bank-tx-1",
-    {
-      id: "bank-tx-1",
-      branchId: "demo-branch",
-      postedOn: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10),
-      description: "CARD SETTLEMENT - STRIPE MERCHANT",
-      reference: "ST-8829104",
-      amount: 1420.5,
-      status: "UNMATCHED",
-      expenseId: null,
-      expense: null,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  [
-    "bank-tx-2",
-    {
-      id: "bank-tx-2",
-      branchId: "demo-branch",
-      postedOn: new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10),
-      description: "WHOLESALE DAIRY & PRODUCE SUPPLIES",
-      reference: "INV-9921",
-      amount: -320.0,
-      status: "UNMATCHED",
-      expenseId: null,
-      expense: null,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  [
-    "bank-tx-3",
-    {
-      id: "bank-tx-3",
-      branchId: "demo-branch",
-      postedOn: new Date(Date.now() - 4 * 86400000).toISOString().slice(0, 10),
-      description: "MUNICIPAL UTILITIES ELECTRICITY & WATER",
-      reference: "ELEC-OCT",
-      amount: -180.0,
-      status: "UNMATCHED",
-      expenseId: null,
-      expense: null,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  [
-    "bank-tx-4",
-    {
-      id: "bank-tx-4",
-      branchId: "demo-branch",
-      postedOn: new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10),
-      description: "COMMERCIAL RENT NOVEMBER LEASE",
-      reference: "RENT-NOV",
-      amount: -2500.0,
-      status: "MATCHED",
-      expenseId: "exp-rent-1",
-      expense: {
-        id: "exp-rent-1",
-        category: "Rent",
-        note: "Store front lease November",
-        spentOn: new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10),
-      },
-      createdAt: new Date().toISOString(),
-    },
-  ],
-]);
+const memoryBankTransactions: Map<string, BankTransactionRecord> = new Map();
 
 export async function getBankView(branchId: string) {
+  // If memory map is empty, pull real digital payments and non-cash expenses
+  if (memoryBankTransactions.size === 0) {
+    try {
+      const admin = createAdminClient();
+      const { data: payments } = await admin
+        .from("payments")
+        .select("id, amount, method, reference, created_at, orders!inner(branch_id, order_number)")
+        .eq("orders.branch_id", branchId)
+        .neq("method", "CASH")
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      (payments || []).forEach((p: any) => {
+        const id = `bank-pmt-${p.id}`;
+        memoryBankTransactions.set(id, {
+          id,
+          branchId,
+          postedOn: (p.created_at || new Date().toISOString()).slice(0, 10),
+          description: `${p.method} SETTLEMENT - ${p.orders?.order_number || "ORDER"}`,
+          reference: p.reference || `REF-${p.id.slice(0, 6)}`,
+          amount: Math.round(Number(p.amount || 0) * 100) / 100,
+          status: "MATCHED",
+          expenseId: null,
+          expense: null,
+          createdAt: p.created_at || new Date().toISOString(),
+        });
+      });
+
+      const { data: expenses } = await admin
+        .from("expenses")
+        .select("id, amount, category, note, spent_on, created_at")
+        .eq("branch_id", branchId)
+        .eq("paid_from_cash", false)
+        .order("spent_on", { ascending: false })
+        .limit(20);
+
+      (expenses || []).forEach((e: any) => {
+        const id = `bank-exp-${e.id}`;
+        memoryBankTransactions.set(id, {
+          id,
+          branchId,
+          postedOn: e.spent_on || new Date().toISOString().slice(0, 10),
+          description: `DISBURSEMENT - ${e.category.toUpperCase()}${e.note ? ` (${e.note})` : ""}`,
+          reference: `EXP-${e.id.slice(0, 6)}`,
+          amount: -Math.round(Number(e.amount || 0) * 100) / 100,
+          status: "MATCHED",
+          expenseId: e.id,
+          expense: {
+            id: e.id,
+            category: e.category,
+            note: e.note,
+            spentOn: e.spent_on,
+          },
+          createdAt: e.created_at || new Date().toISOString(),
+        });
+      });
+    } catch {
+      //
+    }
+  }
+
   const transactions = Array.from(memoryBankTransactions.values())
     .filter((t) => t.branchId === branchId)
     .sort((a, b) => b.postedOn.localeCompare(a.postedOn));

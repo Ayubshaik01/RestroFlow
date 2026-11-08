@@ -30,30 +30,25 @@ export async function GET(req: Request) {
 
     if (orders && orders.length > 0) {
       orders.forEach((o: any) => {
-        if (o.status === "COMPLETED" || o.status === "DELIVERED") {
+        if (o.status === "COMPLETED" || o.status === "DELIVERED" || o.status === "PAID") {
           ordersCount++;
           grossCollected += Number(o.total_amount || 0) - Number(o.tip_amount || 0);
           taxCollected += Number(o.tax_amount || 0);
-        } else if (o.status === "CANCELLED") {
+        } else if (o.status === "CANCELLED" || o.status === "REFUNDED") {
           refunds += Number(o.total_amount || 0);
         }
       });
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.error("Profit loss orders error:", err);
   }
 
-  // If no live orders yet in range, provide realistic benchmark values
-  if (ordersCount === 0 && grossCollected === 0) {
-    ordersCount = 142;
-    grossCollected = 4850.0;
-    taxCollected = 242.5;
-    refunds = 45.0;
-  }
+  grossCollected = Math.round(grossCollected * 100) / 100;
+  taxCollected = Math.round(taxCollected * 100) / 100;
+  refunds = Math.round(refunds * 100) / 100;
+  const netSales = Math.max(0, Math.round((grossCollected - taxCollected - refunds) * 100) / 100);
 
-  const netSales = Math.round((grossCollected - taxCollected - refunds) * 100) / 100;
-
-  // Expenses breakdown
+  // Expenses breakdown from real database
   const expenseMap = new Map<string, number>();
   try {
     const { data: exp } = await admin
@@ -67,14 +62,8 @@ export async function GET(req: Request) {
       const cat = (e.category || "GENERAL").toUpperCase();
       expenseMap.set(cat, (expenseMap.get(cat) || 0) + Number(e.amount || 0));
     });
-  } catch {
-    // fallback
-  }
-
-  if (expenseMap.size === 0) {
-    expenseMap.set("INGREDIENTS", 1200.0);
-    expenseMap.set("UTILITIES", 280.0);
-    expenseMap.set("MAINTENANCE", 150.0);
+  } catch (err) {
+    console.error("Profit loss expenses error:", err);
   }
 
   const expenses = Array.from(expenseMap.entries()).map(([category, amount]) => ({
@@ -83,14 +72,14 @@ export async function GET(req: Request) {
   }));
 
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
-  const payrollCost = 1800.0;
+  const payrollCost = 0; // staff payroll entered dynamically
   const netProfit = Math.round((netSales - totalExpenses - payrollCost) * 100) / 100;
 
   return NextResponse.json({
     orders: ordersCount,
-    grossCollected: Math.round(grossCollected * 100) / 100,
-    taxCollected: Math.round(taxCollected * 100) / 100,
-    refunds: Math.round(refunds * 100) / 100,
+    grossCollected,
+    taxCollected,
+    refunds,
     netSales,
     expenses,
     totalExpenses: Math.round(totalExpenses * 100) / 100,

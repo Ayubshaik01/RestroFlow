@@ -5,12 +5,18 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  Banknote,
+  Calendar,
   CheckCircle2,
+  Clock,
+  CreditCard,
   DollarSign,
   Download,
   FileSpreadsheet,
   Filter,
+  Layers,
   Plus,
+  QrCode,
   Receipt,
   Search,
   ShieldCheck,
@@ -731,30 +737,70 @@ export function VendorBillsTab({ branchId }: { branchId: string | null }) {
    3. CASH FLOW STATEMENT TAB
    ========================================================================= */
 
-interface CashFlowResponse {
+interface PaymentBreakdown {
+  method: "CASH" | "UPI" | "BANK_CARD" | "OTHERS";
+  label: string;
+  amount: number;
+  count: number;
+  percentage: number;
+}
+
+interface CashFlowPeriodData {
+  period: "day" | "month" | "year" | "custom";
+  periodLabel: string;
   from: string;
   to: string;
-  operating: {
-    inflows: { label: string; amount: number }[];
-    outflows: { label: string; amount: number }[];
-    net: number;
+  totalInflow: number;
+  totalOutflow: number;
+  netCashFlow: number;
+  receiptsCount: number;
+  distribution: {
+    cash: PaymentBreakdown;
+    upi: PaymentBreakdown;
+    bank: PaymentBreakdown;
+    others: PaymentBreakdown;
   };
-  investing: {
-    inflows: { label: string; amount: number }[];
-    outflows: { label: string; amount: number }[];
-    net: number;
+  expenses: {
+    total: number;
+    cashExpenses: number;
+    bankExpenses: number;
+    count: number;
   };
-  financing: {
-    inflows: { label: string; amount: number }[];
-    outflows: { label: string; amount: number }[];
-    net: number;
-  };
+  receipts: Array<{
+    id: string;
+    orderNumber: string;
+    paidAt: string;
+    method: "CASH" | "UPI" | "BANK_CARD" | "OTHERS";
+    rawMethod: string;
+    amount: number;
+    status: string;
+    orderType: string;
+  }>;
+}
+
+interface CashFlowResponse {
+  day: CashFlowPeriodData;
+  month: CashFlowPeriodData;
+  year: CashFlowPeriodData;
+  custom?: CashFlowPeriodData | null;
   summary: {
+    todayRevenue: number;
+    todayCashInHand: number;
+    monthRevenue: number;
+    yearRevenue: number;
+    totalReceiptsCount: number;
+  };
+  operating?: {
+    inflows: { label: string; amount: number }[];
+    outflows: { label: string; amount: number }[];
+    net: number;
+  };
+  summaryLegacy?: {
     openingBalance: number;
     netCashChange: number;
     closingBalance: number;
   };
-  metrics: {
+  metrics?: {
     runwayDays: number;
     dailyBurn: number;
     operatingRatio: number;
@@ -762,212 +808,579 @@ interface CashFlowResponse {
 }
 
 export function CashFlowTab({ branchId }: { branchId: string | null }) {
-  const [from, setFrom] = useState(() => iso(new Date(Date.now() - 30 * 86400000)));
-  const [to, setTo] = useState(() => iso(new Date()));
+  const [periodMode, setPeriodMode] = useState<"day" | "month" | "year" | "custom">("day");
+  const [methodFilter, setMethodFilter] = useState<"ALL" | "CASH" | "UPI" | "BANK_CARD" | "OTHERS">("ALL");
+  const [receiptSearch, setReceiptSearch] = useState("");
+  const [showFormalStatement, setShowFormalStatement] = useState(false);
 
-  const qs = `branchId=${branchId}&from=${from}&to=${to}`;
+  const [customFrom, setCustomFrom] = useState(() => iso(new Date(Date.now() - 30 * 86400000)));
+  const [customTo, setCustomTo] = useState(() => iso(new Date()));
+
+  const qs = `branchId=${branchId}${periodMode === "custom" ? `&from=${customFrom}&to=${customTo}` : ""}`;
   const { data, isLoading } = useQuery({
-    queryKey: ["acct", "cash-flow", branchId, from, to],
+    queryKey: ["acct", "cash-flow", branchId, periodMode === "custom" ? `${customFrom}-${customTo}` : "standard"],
     queryFn: () => api.get<CashFlowResponse>(`/accounting/cash-flow?${qs}`),
     enabled: !!branchId,
   });
 
+  const activeData: CashFlowPeriodData | undefined = data
+    ? periodMode === "day"
+      ? data.day
+      : periodMode === "month"
+      ? data.month
+      : periodMode === "year"
+      ? data.year
+      : data.custom || data.month
+    : undefined;
+
+  // Filter receipts
+  const filteredReceipts = (activeData?.receipts || []).filter((r) => {
+    if (methodFilter !== "ALL" && r.method !== methodFilter) return false;
+    if (receiptSearch) {
+      const q = receiptSearch.toLowerCase();
+      return (
+        r.orderNumber.toLowerCase().includes(q) ||
+        String(r.amount).includes(q) ||
+        r.rawMethod.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  const exportReceiptsCsv = () => {
+    if (!activeData || activeData.receipts.length === 0) {
+      toast.error("No receipts to export");
+      return;
+    }
+    const headers = ["Order Number", "Date & Time", "Payment Category", "Raw Method", "Amount", "Status", "Order Type"];
+    const rows = activeData.receipts.map((r) => [
+      r.orderNumber,
+      new Date(r.paidAt).toLocaleString(),
+      r.method,
+      r.rawMethod,
+      r.amount.toFixed(2),
+      r.status,
+      r.orderType,
+    ]);
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...rows.map((row) => row.map((cell) => `"${cell}"`).join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `CashFlow_${activeData.period}_${activeData.from}_to_${activeData.to}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Receipts export downloaded successfully");
+  };
+
   return (
     <div className="flex flex-col gap-5">
-      {/* Date Filter & Key Performance Indicators */}
-      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div className="flex items-center gap-2">
+      {/* 1. Header & Period Selector (Day / Month / Year / Custom) */}
+      <Card className="p-4 bg-card border-border/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-foreground">Cash Flow &amp; Payment Settlements</h2>
+            <span className="text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+              100% Real User Receipts
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Real-time liquid distribution across Drawer Cash, UPI, and Bank settlements
+          </p>
+        </div>
+
+        {/* Quick Period Buttons: Day, Month, Year, Custom */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg border border-border bg-muted/40 p-1">
+            <button
+              type="button"
+              onClick={() => setPeriodMode("day")}
+              className={cn(
+                "px-3 py-1 text-xs font-semibold rounded-md transition-all",
+                periodMode === "day"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              ☀️ Today (Day)
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriodMode("month")}
+              className={cn(
+                "px-3 py-1 text-xs font-semibold rounded-md transition-all",
+                periodMode === "month"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              📅 This Month
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriodMode("year")}
+              className={cn(
+                "px-3 py-1 text-xs font-semibold rounded-md transition-all",
+                periodMode === "year"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              📈 This Year
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriodMode("custom")}
+              className={cn(
+                "px-3 py-1 text-xs font-semibold rounded-md transition-all",
+                periodMode === "custom"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              🗓️ Custom Range
+            </button>
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowFormalStatement(!showFormalStatement)}
+            className="text-xs h-8"
+          >
+            {showFormalStatement ? "Show Payment Breakdown" : "CFO Statement"}
+          </Button>
+        </div>
+      </Card>
+
+      {/* Custom Date Range Picker when selected */}
+      {periodMode === "custom" && (
+        <Card className="flex items-center gap-3 p-3 bg-muted/30">
+          <span className="text-xs font-medium text-foreground">Custom Date Filter:</span>
           <Input
             type="date"
-            className="w-36 h-9"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            aria-label="From date"
+            className="w-36 h-8 text-xs"
+            value={customFrom}
+            onChange={(e) => setCustomFrom(e.target.value)}
           />
           <span className="text-xs text-muted-foreground">to</span>
           <Input
             type="date"
-            className="w-36 h-9"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            aria-label="To date"
+            className="w-36 h-8 text-xs"
+            value={customTo}
+            onChange={(e) => setCustomTo(e.target.value)}
           />
-        </div>
-
-        {data && (
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/60 px-3 py-1 rounded-md">
-              <span>Daily Cash Burn:</span>
-              <strong className="text-foreground tabular-nums">
-                {formatCurrency(data.metrics.dailyBurn)}/day
-              </strong>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/60 px-3 py-1 rounded-md">
-              <span>Estimated Runway:</span>
-              <strong className="text-emerald-600 font-semibold">{data.metrics.runwayDays} days</strong>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary/60 px-3 py-1 rounded-md">
-              <span>Operating Cash Ratio:</span>
-              <strong className="text-foreground">{data.metrics.operatingRatio}x</strong>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* Cash Flow Summary Cards */}
-      {data && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Card className="p-4">
-            <p className="text-xs text-muted-foreground font-medium">Opening Cash Reserve</p>
-            <p className="text-2xl font-bold tabular-nums text-foreground mt-1">
-              {formatCurrency(data.summary.openingBalance)}
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">At start of period</p>
-          </Card>
-
-          <Card
-            className={cn(
-              "p-4 border-l-4",
-              data.summary.netCashChange >= 0 ? "border-l-emerald-500" : "border-l-rose-500",
-            )}
-          >
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground font-medium">Net Change in Cash</p>
-              {data.summary.netCashChange >= 0 ? (
-                <ArrowUpRight className="h-4 w-4 text-emerald-600" />
-              ) : (
-                <ArrowDownRight className="h-4 w-4 text-rose-600" />
-              )}
-            </div>
-            <p
-              className={cn(
-                "text-2xl font-bold tabular-nums mt-1",
-                data.summary.netCashChange >= 0 ? "text-emerald-600" : "text-rose-600",
-              )}
-            >
-              {data.summary.netCashChange >= 0 ? "+" : ""}
-              {formatCurrency(data.summary.netCashChange)}
-            </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Net generation across activities</p>
-          </Card>
-
-          <Card className="p-4 bg-primary text-primary-foreground">
-            <p className="text-xs text-primary-foreground/80 font-medium">Ending Liquid Cash Balance</p>
-            <p className="text-2xl font-bold tabular-nums mt-1">
-              {formatCurrency(data.summary.closingBalance)}
-            </p>
-            <p className="text-[11px] text-primary-foreground/80 mt-0.5">Available across drawer &amp; bank</p>
-          </Card>
-        </div>
+        </Card>
       )}
 
-      {/* Detailed Cash Flow Sections */}
       {isLoading ? (
-        <Skeleton className="h-64" />
-      ) : data ? (
-        <div className="flex flex-col gap-4">
-          {/* 1. Operating Activities */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-3 border-b border-border pb-2">
-              <div>
-                <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-emerald-600" /> 1. Operating Cash Flows
-                </h3>
-                <p className="text-xs text-muted-foreground">Core restaurant operations, sales and day-to-day costs</p>
-              </div>
-              <span
-                className={cn(
-                  "font-bold tabular-nums text-sm",
-                  data.operating.net >= 0 ? "text-emerald-600" : "text-rose-600",
-                )}
-              >
-                Net: {formatCurrency(data.operating.net)}
-              </span>
-            </div>
-
-            <div className="flex flex-col divide-y divide-border text-sm">
-              <p className="text-xs font-semibold text-muted-foreground uppercase pt-1 pb-1">Inflows</p>
-              {data.operating.inflows.map((i) => (
-                <div key={i.label} className="flex justify-between py-1.5 text-xs">
-                  <span>{i.label}</span>
-                  <span className="font-medium text-emerald-600 tabular-nums">+{formatCurrency(i.amount)}</span>
-                </div>
-              ))}
-
-              <p className="text-xs font-semibold text-muted-foreground uppercase pt-3 pb-1">Outflows</p>
-              {data.operating.outflows.map((o) => (
-                <div key={o.label} className="flex justify-between py-1.5 text-xs">
-                  <span>{o.label}</span>
-                  <span className="font-medium text-rose-600 tabular-nums">{formatCurrency(o.amount)}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* 2. Investing Activities */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-3 border-b border-border pb-2">
-              <div>
-                <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-                  <Wallet className="h-4 w-4 text-sky-600" /> 2. Investing Cash Flows
-                </h3>
-                <p className="text-xs text-muted-foreground">Kitchen equipment, refrigeration &amp; hardware purchases</p>
-              </div>
-              <span
-                className={cn(
-                  "font-bold tabular-nums text-sm",
-                  data.investing.net >= 0 ? "text-emerald-600" : "text-foreground",
-                )}
-              >
-                Net: {formatCurrency(data.investing.net)}
-              </span>
-            </div>
-
-            <div className="flex flex-col divide-y divide-border text-sm">
-              {data.investing.outflows.map((o) => (
-                <div key={o.label} className="flex justify-between py-1.5 text-xs">
-                  <span>{o.label}</span>
-                  <span className="font-medium text-rose-600 tabular-nums">{formatCurrency(o.amount)}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* 3. Financing Activities */}
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-3 border-b border-border pb-2">
-              <div>
-                <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-                  <DollarSign className="h-4 w-4 text-purple-600" /> 3. Financing Cash Flows
-                </h3>
-                <p className="text-xs text-muted-foreground">Owner capital contributions, partner drawings &amp; loans</p>
-              </div>
-              <span
-                className={cn(
-                  "font-bold tabular-nums text-sm",
-                  data.financing.net >= 0 ? "text-emerald-600" : "text-foreground",
-                )}
-              >
-                Net: {formatCurrency(data.financing.net)}
-              </span>
-            </div>
-
-            <div className="flex flex-col divide-y divide-border text-sm">
-              {data.financing.inflows.map((i) => (
-                <div key={i.label} className="flex justify-between py-1.5 text-xs">
-                  <span>{i.label}</span>
-                  <span className="font-medium text-emerald-600 tabular-nums">+{formatCurrency(i.amount)}</span>
-                </div>
-              ))}
-              {data.financing.outflows.map((o) => (
-                <div key={o.label} className="flex justify-between py-1.5 text-xs">
-                  <span>{o.label}</span>
-                  <span className="font-medium text-rose-600 tabular-nums">{formatCurrency(o.amount)}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
         </div>
+      ) : activeData ? (
+        <>
+          {/* 2. Top Inflow, Outflow, Net In-Hand KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Card className="p-4 border-l-4 border-l-emerald-500 bg-card">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Total Collections (Inflow)
+                </span>
+                <ArrowUpRight className="h-4 w-4 text-emerald-600" />
+              </div>
+              <p className="text-2xl font-bold tabular-nums text-foreground mt-1.5">
+                +{formatCurrency(activeData.totalInflow)}
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                From {activeData.receiptsCount} real customer receipts ({activeData.periodLabel})
+              </p>
+            </Card>
+
+            <Card className="p-4 border-l-4 border-l-rose-500 bg-card">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Total Expenses (Outflow)
+                </span>
+                <ArrowDownRight className="h-4 w-4 text-rose-600" />
+              </div>
+              <p className="text-2xl font-bold tabular-nums text-rose-600 mt-1.5">
+                -{formatCurrency(activeData.totalOutflow)}
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {formatCurrency(activeData.expenses.cashExpenses)} cash + {formatCurrency(activeData.expenses.bankExpenses)} bank
+              </p>
+            </Card>
+
+            <Card
+              className={cn(
+                "p-4 border-l-4",
+                activeData.netCashFlow >= 0 ? "border-l-primary bg-primary/5" : "border-l-rose-500 bg-rose-500/5",
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Net Liquid Cash Flow
+                </span>
+                <Wallet className="h-4 w-4 text-primary" />
+              </div>
+              <p
+                className={cn(
+                  "text-2xl font-bold tabular-nums mt-1.5",
+                  activeData.netCashFlow >= 0 ? "text-foreground" : "text-rose-600",
+                )}
+              >
+                {activeData.netCashFlow >= 0 ? "+" : ""}
+                {formatCurrency(activeData.netCashFlow)}
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Surplus generated in {activeData.periodLabel}
+              </p>
+            </Card>
+          </div>
+
+          {/* 3. The 4 Dedicated Payment Mode Distribution Cards: Bank, UPI, Cash, Others */}
+          <div>
+            <div className="flex items-center justify-between mb-2.5">
+              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                Distribution by Payment Mode ({activeData.periodLabel})
+              </h3>
+              <span className="text-xs text-muted-foreground">
+                Sum: {formatCurrency(activeData.totalInflow)}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {/* Cash in Drawer */}
+              <Card className="p-4 border-border/80 hover:border-emerald-500/50 transition-colors bg-card shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600">
+                      <Banknote className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-foreground">Cash in Drawer</p>
+                      <p className="text-[10px] text-muted-foreground">Till &amp; Counter Float</p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 px-2 py-0.5 rounded-full">
+                    {activeData.distribution.cash.percentage}%
+                  </span>
+                </div>
+                <p className="text-xl font-bold tabular-nums text-foreground mt-2">
+                  {formatCurrency(activeData.distribution.cash.amount)}
+                </p>
+                <div className="w-full bg-secondary h-1.5 rounded-full mt-2.5 overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-full rounded-full transition-all"
+                    style={{ width: `${activeData.distribution.cash.percentage}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2 flex justify-between">
+                  <span>Receipts Count:</span>
+                  <strong className="text-foreground">{activeData.distribution.cash.count}</strong>
+                </p>
+              </Card>
+
+              {/* UPI */}
+              <Card className="p-4 border-border/80 hover:border-purple-500/50 transition-colors bg-card shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-purple-500/10 text-purple-600">
+                      <QrCode className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-foreground">UPI Direct</p>
+                      <p className="text-[10px] text-muted-foreground">GPay / PhonePe / QR</p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-semibold bg-purple-500/10 text-purple-600 px-2 py-0.5 rounded-full">
+                    {activeData.distribution.upi.percentage}%
+                  </span>
+                </div>
+                <p className="text-xl font-bold tabular-nums text-foreground mt-2">
+                  {formatCurrency(activeData.distribution.upi.amount)}
+                </p>
+                <div className="w-full bg-secondary h-1.5 rounded-full mt-2.5 overflow-hidden">
+                  <div
+                    className="bg-purple-500 h-full rounded-full transition-all"
+                    style={{ width: `${activeData.distribution.upi.percentage}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2 flex justify-between">
+                  <span>Receipts Count:</span>
+                  <strong className="text-foreground">{activeData.distribution.upi.count}</strong>
+                </p>
+              </Card>
+
+              {/* Bank & Cards */}
+              <Card className="p-4 border-border/80 hover:border-blue-500/50 transition-colors bg-card shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600">
+                      <CreditCard className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-foreground">Bank &amp; Cards</p>
+                      <p className="text-[10px] text-muted-foreground">POS Swipe &amp; EDC</p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-semibold bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full">
+                    {activeData.distribution.bank.percentage}%
+                  </span>
+                </div>
+                <p className="text-xl font-bold tabular-nums text-foreground mt-2">
+                  {formatCurrency(activeData.distribution.bank.amount)}
+                </p>
+                <div className="w-full bg-secondary h-1.5 rounded-full mt-2.5 overflow-hidden">
+                  <div
+                    className="bg-blue-500 h-full rounded-full transition-all"
+                    style={{ width: `${activeData.distribution.bank.percentage}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2 flex justify-between">
+                  <span>Receipts Count:</span>
+                  <strong className="text-foreground">{activeData.distribution.bank.count}</strong>
+                </p>
+              </Card>
+
+              {/* Others */}
+              <Card className="p-4 border-border/80 hover:border-amber-500/50 transition-colors bg-card shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600">
+                      <Layers className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-foreground">Other Receipts</p>
+                      <p className="text-[10px] text-muted-foreground">Aggregators / Gift Card</p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-semibold bg-amber-500/10 text-amber-600 px-2 py-0.5 rounded-full">
+                    {activeData.distribution.others.percentage}%
+                  </span>
+                </div>
+                <p className="text-xl font-bold tabular-nums text-foreground mt-2">
+                  {formatCurrency(activeData.distribution.others.amount)}
+                </p>
+                <div className="w-full bg-secondary h-1.5 rounded-full mt-2.5 overflow-hidden">
+                  <div
+                    className="bg-amber-500 h-full rounded-full transition-all"
+                    style={{ width: `${activeData.distribution.others.percentage}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2 flex justify-between">
+                  <span>Receipts Count:</span>
+                  <strong className="text-foreground">{activeData.distribution.others.count}</strong>
+                </p>
+              </Card>
+            </div>
+          </div>
+
+          {/* 4. Live Individual Customer Receipts & Settlements Table */}
+          <Card className="p-4 bg-card shadow-sm border-border/80">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-bold text-sm text-foreground">
+                  User Receipts &amp; Transactions ({activeData.periodLabel})
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Individual bills settled by customers with audit trails
+                </p>
+              </div>
+
+              {/* Filters & Export */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setMethodFilter("ALL")}
+                    className={cn(
+                      "px-2.5 py-1 rounded transition-colors",
+                      methodFilter === "ALL" ? "bg-background font-semibold text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    All ({activeData.receipts.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMethodFilter("CASH")}
+                    className={cn(
+                      "px-2.5 py-1 rounded transition-colors",
+                      methodFilter === "CASH" ? "bg-background font-semibold text-emerald-600" : "text-muted-foreground",
+                    )}
+                  >
+                    Cash ({activeData.distribution.cash.count})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMethodFilter("UPI")}
+                    className={cn(
+                      "px-2.5 py-1 rounded transition-colors",
+                      methodFilter === "UPI" ? "bg-background font-semibold text-purple-600" : "text-muted-foreground",
+                    )}
+                  >
+                    UPI ({activeData.distribution.upi.count})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMethodFilter("BANK_CARD")}
+                    className={cn(
+                      "px-2.5 py-1 rounded transition-colors",
+                      methodFilter === "BANK_CARD" ? "bg-background font-semibold text-blue-600" : "text-muted-foreground",
+                    )}
+                  >
+                    Bank/Card ({activeData.distribution.bank.count})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMethodFilter("OTHERS")}
+                    className={cn(
+                      "px-2.5 py-1 rounded transition-colors",
+                      methodFilter === "OTHERS" ? "bg-background font-semibold text-amber-600" : "text-muted-foreground",
+                    )}
+                  >
+                    Others ({activeData.distribution.others.count})
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search receipt #…"
+                    value={receiptSearch}
+                    onChange={(e) => setReceiptSearch(e.target.value)}
+                    className="pl-8 h-8 w-36 text-xs"
+                  />
+                </div>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={exportReceiptsCsv}
+                  className="h-8 text-xs gap-1"
+                >
+                  <Download className="h-3.5 w-3.5" /> Export CSV
+                </Button>
+              </div>
+            </div>
+
+            {filteredReceipts.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground border border-dashed border-border/80 rounded-lg">
+                <Receipt className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                <p className="text-xs font-semibold text-foreground">No customer receipts found</p>
+                <p className="text-[11px] mt-0.5">
+                  Orders completed at the POS counter will instantly appear here with their payment mode.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="text-left text-muted-foreground border-b border-border/60">
+                    <tr>
+                      <th className="py-2.5 pr-4 font-semibold">Time</th>
+                      <th className="py-2.5 pr-4 font-semibold">Receipt / Order #</th>
+                      <th className="py-2.5 pr-4 font-semibold">Type</th>
+                      <th className="py-2.5 pr-4 font-semibold">Payment Mode</th>
+                      <th className="py-2.5 pr-4 font-semibold">Status</th>
+                      <th className="py-2.5 text-right font-semibold">Amount Paid</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {filteredReceipts.map((r) => (
+                      <tr key={r.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="py-2.5 pr-4 whitespace-nowrap text-muted-foreground font-mono">
+                          {new Date(r.paidAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </td>
+                        <td className="py-2.5 pr-4 whitespace-nowrap font-semibold text-foreground">
+                          {r.orderNumber}
+                        </td>
+                        <td className="py-2.5 pr-4 whitespace-nowrap">
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-secondary text-secondary-foreground">
+                            {r.orderType}
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-4 whitespace-nowrap">
+                          {r.method === "CASH" && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                              <Banknote className="h-3 w-3" /> Cash
+                            </span>
+                          )}
+                          {r.method === "UPI" && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded-full">
+                              <QrCode className="h-3 w-3" /> UPI ({r.rawMethod})
+                            </span>
+                          )}
+                          {r.method === "BANK_CARD" && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded-full">
+                              <CreditCard className="h-3 w-3" /> Card/Bank
+                            </span>
+                          )}
+                          {r.method === "OTHERS" && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                              <Layers className="h-3 w-3" /> {r.rawMethod}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 pr-4 whitespace-nowrap">
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right font-bold tabular-nums text-foreground">
+                          {formatCurrency(r.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          {/* 5. Optional Formal Corporate Cash Flow Statement (CFO View) */}
+          {showFormalStatement && data?.operating ? (
+            <Card className="p-5 bg-card border-border/80">
+              <div className="flex items-center justify-between mb-3 border-b border-border pb-2">
+                <div>
+                  <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-emerald-600" /> Statutory Cash Flow Statement
+                  </h3>
+                  <p className="text-xs text-muted-foreground">Accounting view based on real operating inflows &amp; expenses</p>
+                </div>
+                <span
+                  className={cn(
+                    "font-bold tabular-nums text-sm",
+                    data.operating.net >= 0 ? "text-emerald-600" : "text-rose-600",
+                  )}
+                >
+                  Net Operating: {formatCurrency(data.operating.net)}
+                </span>
+              </div>
+
+              <div className="flex flex-col divide-y divide-border text-xs">
+                <p className="font-semibold text-muted-foreground uppercase pt-1 pb-1">Inflows</p>
+                {data.operating.inflows.map((i) => (
+                  <div key={i.label} className="flex justify-between py-1.5">
+                    <span>{i.label}</span>
+                    <span className="font-medium text-emerald-600 tabular-nums">+{formatCurrency(i.amount)}</span>
+                  </div>
+                ))}
+
+                <p className="font-semibold text-muted-foreground uppercase pt-3 pb-1">Outflows</p>
+                {data.operating.outflows.map((o) => (
+                  <div key={o.label} className="flex justify-between py-1.5">
+                    <span>{o.label}</span>
+                    <span className="font-medium text-rose-600 tabular-nums">{formatCurrency(o.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

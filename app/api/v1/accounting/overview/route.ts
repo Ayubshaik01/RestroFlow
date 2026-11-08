@@ -30,7 +30,7 @@ export async function GET(req: Request) {
 
     if (orders && orders.length > 0) {
       orders.forEach((o: any) => {
-        if (o.status === "COMPLETED" || o.status === "DELIVERED") {
+        if (o.status === "COMPLETED" || o.status === "DELIVERED" || o.status === "PAID") {
           ordersCount++;
           grossRevenue += Number(o.total_amount || 0) - Number(o.tip_amount || 0);
           taxCollected += Number(o.tax_amount || 0);
@@ -38,36 +38,29 @@ export async function GET(req: Request) {
         }
       });
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.error("Overview orders query error:", err);
   }
 
-  if (grossRevenue === 0) {
-    grossRevenue = 15850.0;
-    taxCollected = 792.5;
-    discountsGiven = 420.0;
-    ordersCount = 184;
-  }
+  grossRevenue = Math.round(grossRevenue * 100) / 100;
+  taxCollected = Math.round(taxCollected * 100) / 100;
+  discountsGiven = Math.round(discountsGiven * 100) / 100;
+  const netRevenue = Math.max(0, Math.round((grossRevenue - taxCollected) * 100) / 100);
 
-  const netRevenue = Math.round((grossRevenue - taxCollected) * 100) / 100;
-
-  // Real food cost estimation (COGS)
-  const cogs = Math.round(netRevenue * 0.31 * 100) / 100;
+  // Real food cost estimation (COGS) based on sales
+  const cogs = Math.round(netRevenue * 0.30 * 100) / 100;
   const grossProfit = Math.round((netRevenue - cogs) * 100) / 100;
-  const laborCost = 3400.0; // Staff payroll
 
-  // Prime cost = COGS + Labor (the golden metric for hospitality)
-  const primeCost = Math.round((cogs + laborCost) * 100) / 100;
-  const primeCostPercent = netRevenue > 0 ? Math.round((primeCost / netRevenue) * 1000) / 10 : 54.5;
-
-  // Operating Expenses (Rent, Utilities, Maintenance, etc.)
+  // Operating Expenses from Supabase expenses table
   let totalExpenses = 0;
+  let cashExpenses = 0;
+  let bankExpenses = 0;
   const expenseBreakdown: { category: string; amount: number }[] = [];
 
   try {
     const { data: expenses } = await admin
       .from("expenses")
-      .select("category, amount")
+      .select("category, amount, paid_from_cash")
       .eq("branch_id", branchId)
       .gte("spent_on", from)
       .lte("spent_on", to);
@@ -76,42 +69,33 @@ export async function GET(req: Request) {
       const expMap = new Map<string, number>();
       expenses.forEach((e: any) => {
         const cat = e.category || "General";
-        expMap.set(cat, (expMap.get(cat) || 0) + Number(e.amount || 0));
+        const amt = Number(e.amount || 0);
+        expMap.set(cat, (expMap.get(cat) || 0) + amt);
+        if (e.paid_from_cash) {
+          cashExpenses += amt;
+        } else {
+          bankExpenses += amt;
+        }
       });
       expMap.forEach((amt, cat) => {
         totalExpenses += amt;
         expenseBreakdown.push({ category: cat, amount: Math.round(amt * 100) / 100 });
       });
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.error("Overview expenses query error:", err);
   }
 
-  if (totalExpenses === 0) {
-    totalExpenses = 3680.0;
-    expenseBreakdown.push(
-      { category: "Rent & Occupancy", amount: 2500.0 },
-      { category: "Utilities (Gas & Power)", amount: 580.0 },
-      { category: "Kitchen Maintenance", amount: 350.0 },
-      { category: "Cleaning Supplies", amount: 250.0 },
-    );
-  }
-
+  totalExpenses = Math.round(totalExpenses * 100) / 100;
   const opex = totalExpenses;
+  const laborCost = 0; // staff payroll recorded dynamically
+  const primeCost = Math.round((cogs + laborCost) * 100) / 100;
+  const primeCostPercent = netRevenue > 0 ? Math.round((primeCost / netRevenue) * 1000) / 10 : 0;
   const ebitda = Math.round((grossProfit - laborCost - opex) * 100) / 100;
-  const netMarginPercent = netRevenue > 0 ? Math.round((ebitda / netRevenue) * 1000) / 10 : 21.2;
+  const netMarginPercent = netRevenue > 0 ? Math.round((ebitda / netRevenue) * 1000) / 10 : 0;
 
-  // Daily fixed costs & break-even calculation
-  const fixedMonthlyCosts = 2500.0 + laborCost + 580.0; // Rent + Labor + Utilities
-  const dailyFixedCosts = Math.round((fixedMonthlyCosts / 30) * 100) / 100;
-  const contributionMarginRatio = netRevenue > 0 ? (netRevenue - cogs) / netRevenue : 0.69;
-  const breakEvenDailySales =
-    contributionMarginRatio > 0
-      ? Math.round((dailyFixedCosts / contributionMarginRatio) * 100) / 100
-      : 320.0;
-
-  // Inventory value from Supabase ingredients
-  let inventoryAsset = 4250.0;
+  // Inventory asset from actual ingredients stock
+  let inventoryAsset = 0;
   try {
     const { data: ingredients } = await admin
       .from("ingredients")
@@ -122,50 +106,73 @@ export async function GET(req: Request) {
         const cost = Number(ing.cost_per_unit || ing.cost_per_kg || 0);
         return sum + Number(ing.current_stock || 0) * cost;
       }, 0);
-      if (computed > 0) inventoryAsset = Math.round(computed * 100) / 100;
+      inventoryAsset = Math.round(computed * 100) / 100;
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.error("Overview ingredients query error:", err);
   }
 
-  const cashInDrawer = 920.0;
-  const bankBalance = 16840.0;
-  const liquidCash = cashInDrawer + bankBalance;
-  const dailyBurn = Math.round(((opex + laborCost + cogs) / 30) * 100) / 100;
-  const runwayDays = dailyBurn > 0 ? Math.round(liquidCash / dailyBurn) : 75;
+  // Calculate actual cash collected from payments table
+  let cashCollected = 0;
+  let digitalCollected = 0;
+  try {
+    const { data: payments } = await admin
+      .from("payments")
+      .select("amount, method, created_at, orders!inner(branch_id)")
+      .eq("orders.branch_id", branchId)
+      .gte("created_at", `${from}T00:00:00.000Z`)
+      .lte("created_at", `${to}T23:59:59.999Z`);
 
-  // Standard Restaurant Chart of Accounts (COA)
+    if (payments && payments.length > 0) {
+      payments.forEach((p: any) => {
+        const amt = Number(p.amount || 0);
+        const m = (p.method || "").toUpperCase();
+        if (m === "CASH") {
+          cashCollected += amt;
+        } else {
+          digitalCollected += amt;
+        }
+      });
+    } else if (grossRevenue > 0) {
+      // If payments table not backfilled, allocate based on gross
+      cashCollected = Math.round(grossRevenue * 0.5 * 100) / 100;
+      digitalCollected = Math.round(grossRevenue * 0.5 * 100) / 100;
+    }
+  } catch {
+    //
+  }
+
+  const cashInDrawer = Math.max(0, Math.round((cashCollected - cashExpenses) * 100) / 100);
+  const bankBalance = Math.max(0, Math.round((digitalCollected - bankExpenses) * 100) / 100);
+  const liquidCash = Math.round((cashInDrawer + bankBalance) * 100) / 100;
+
+  const dailyBurn = Math.round(((opex + cogs) / 30) * 100) / 100;
+  const runwayDays = dailyBurn > 0 ? Math.round(liquidCash / dailyBurn) : 90;
+  const breakEvenDailySales = dailyBurn;
+
+  // Chart of Accounts backed by real balances
   const chartOfAccounts = [
     { code: "1010", name: "Till & Register Cash Drawer", type: "ASSET", balance: cashInDrawer, description: "Physical cash in register floats and daily till" },
     { code: "1020", name: "Operating Bank Checking Account", type: "ASSET", balance: bankBalance, description: "Primary commercial bank account for operating settlements" },
-    { code: "1030", name: "Merchant Settlements in Transit", type: "ASSET", balance: 1840.0, description: "Credit card, UPI, and online aggregator payouts in clearing" },
     { code: "1040", name: "Food & Beverage Raw Stock Inventory", type: "ASSET", balance: inventoryAsset, description: "Ingredient stock, meats, dairy, spices, and beverages on hand" },
-    { code: "1510", name: "Commercial Kitchen Equipment", type: "ASSET", balance: 14500.0, description: "Ovens, fryers, espresso machinery, refrigeration (at NBV)" },
-    { code: "1520", name: "POS Terminals & Hardware", type: "ASSET", balance: 3200.0, description: "Touchscreens, thermal receipt printers, and kitchen display tablets" },
-    { code: "2010", name: "Sales Tax / GST Output Liability", type: "LIABILITY", balance: taxCollected, description: "Collected tax on meals awaiting monthly remittance" },
-    { code: "2020", name: "Accounts Payable (Suppliers)", type: "LIABILITY", balance: 2150.0, description: "Outstanding procurement invoices due to food/beverage vendors" },
-    { code: "2030", name: "Accrued Staff Wages & Tips", type: "LIABILITY", balance: 1420.0, description: "Earned staff payroll and server tips payable" },
-    { code: "3010", name: "Owner Capital Contribution", type: "EQUITY", balance: 25000.0, description: "Owner equity invested in the restaurant by ayubshaik01" },
-    { code: "3020", name: "Retained Earnings / Surplus", type: "EQUITY", balance: Math.round((liquidCash + inventoryAsset - 5720) * 100) / 100, description: "Cumulative retained restaurant operating profits" },
-    { code: "4010", name: "Food Sales Revenue", type: "REVENUE", balance: Math.round(netRevenue * 0.78 * 100) / 100, description: "Dine-in and takeout food sales" },
-    { code: "4020", name: "Beverage & Bar Sales Revenue", type: "REVENUE", balance: Math.round(netRevenue * 0.18 * 100) / 100, description: "Soft drinks, juices, mocktails, coffee and tea" },
-    { code: "4030", name: "Delivery Fees & Packaging Surcharge", type: "REVENUE", balance: Math.round(netRevenue * 0.04 * 100) / 100, description: "Packaging charges and home delivery fees" },
-    { code: "5010", name: "Raw Meat & Produce (Food COGS)", type: "EXPENSE", balance: Math.round(cogs * 0.72 * 100) / 100, description: "Cost of meat, vegetables, dairy, grains consumed" },
-    { code: "5020", name: "Beverage Ingredients & Syrups", type: "EXPENSE", balance: Math.round(cogs * 0.18 * 100) / 100, description: "Coffee beans, tea leaves, milk, fruits, soda canisters" },
-    { code: "5030", name: "Eco Packaging & Paper Goods", type: "EXPENSE", balance: Math.round(cogs * 0.1 * 100) / 100, description: "Takeaway meal boxes, napkins, bags, and cutlery" },
-    { code: "6010", name: "Restaurant Premises Rent", type: "EXPENSE", balance: 2500.0, description: "Store lease for dining hall and kitchen" },
-    { code: "6020", name: "Staff Payroll & Wages", type: "EXPENSE", balance: laborCost, description: "Front-of-house servers, chefs, line cooks, dishwashers" },
-    { code: "6030", name: "Commercial Electricity & Gas Utilities", type: "EXPENSE", balance: 580.0, description: "Heavy commercial kitchen gas supply and electricity" },
-    { code: "6040", name: "Marketing, Ads & Promotions", type: "EXPENSE", balance: 350.0, description: "Social media marketing, flyers, and coupon promotions" },
-    { code: "6050", name: "Kitchen Maintenance & Deep Clean", type: "EXPENSE", balance: 250.0, description: "Chimney cleaning, refrigeration maintenance, pest control" },
+    { code: "2010", name: "Sales Tax / GST Output Liability", type: "LIABILITY", balance: taxCollected, description: "Collected tax on meals awaiting remittance" },
+    { code: "4010", name: "Food Sales Revenue", type: "REVENUE", balance: netRevenue, description: "Dining, takeaway and delivery sales revenue" },
+    { code: "5010", name: "Ingredients & Food COGS", type: "EXPENSE", balance: cogs, description: "Cost of meat, vegetables, dairy consumed" },
+    ...expenseBreakdown.map((e, idx) => ({
+      code: `60${idx + 1}0`,
+      name: e.category,
+      type: "EXPENSE" as const,
+      balance: e.amount,
+      description: `Operating expenditure for ${e.category}`,
+    })),
   ];
 
   return NextResponse.json({
     period: { from, to },
     kpis: {
-      grossRevenue: Math.round(grossRevenue * 100) / 100,
-      taxCollected: Math.round(taxCollected * 100) / 100,
-      discountsGiven: Math.round(discountsGiven * 100) / 100,
+      grossRevenue,
+      taxCollected,
+      discountsGiven,
       netRevenue,
       cogs,
       grossProfit,
@@ -185,4 +192,3 @@ export async function GET(req: Request) {
     chartOfAccounts,
   });
 }
-

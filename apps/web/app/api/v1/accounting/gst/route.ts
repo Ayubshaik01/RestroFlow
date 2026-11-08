@@ -23,6 +23,7 @@ export async function GET(req: Request) {
       .from("order_items")
       .select("tax_rate_snapshot, line_total, orders!inner(branch_id, created_at, status)")
       .eq("orders.branch_id", branchId)
+      .in("orders.status", ["PAID", "COMPLETED", "DELIVERED"])
       .gte("orders.created_at", `${from}T00:00:00.000Z`)
       .lte("orders.created_at", `${to}T23:59:59.999Z`);
 
@@ -45,18 +46,13 @@ export async function GET(req: Request) {
       .from("orders")
       .select("id", { count: "exact", head: true })
       .eq("branch_id", branchId)
+      .in("status", ["PAID", "COMPLETED", "DELIVERED"])
       .gte("created_at", `${from}T00:00:00.000Z`)
       .lte("created_at", `${to}T23:59:59.999Z`);
 
     ordersCount = count || 0;
-  } catch {
-    // fallback
-  }
-
-  if (rateMap.size === 0) {
-    rateMap.set(5, { taxableValue: 3500.0, tax: 175.0, total: 3675.0 });
-    rateMap.set(12, { taxableValue: 1200.0, tax: 144.0, total: 1344.0 });
-    ordersCount = 142;
+  } catch (err) {
+    console.error("GST query error:", err);
   }
 
   const rows = Array.from(rateMap.entries())

@@ -15,85 +15,7 @@ interface JournalEntry {
   balance?: number;
 }
 
-const memoryLedger: JournalEntry[] = [
-  {
-    id: "jl-101",
-    branchId: "demo-branch",
-    entryDate: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
-    accountName: "1010 - Till & Drawer Cash",
-    accountType: "ASSET",
-    description: "Daily POS Cash Register Collections",
-    reference: "POS-CLS-091",
-    debit: 1250.0,
-    credit: 0.0,
-  },
-  {
-    id: "jl-102",
-    branchId: "demo-branch",
-    entryDate: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
-    accountName: "4010 - Food & Beverage Revenue",
-    accountType: "REVENUE",
-    description: "Daily Dining Sales Recognition",
-    reference: "POS-CLS-091",
-    debit: 0.0,
-    credit: 1190.5,
-  },
-  {
-    id: "jl-103",
-    branchId: "demo-branch",
-    entryDate: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
-    accountName: "2010 - Sales Tax / GST Payable",
-    accountType: "LIABILITY",
-    description: "5% GST Output on Daily Dining Sales",
-    reference: "POS-CLS-091",
-    debit: 0.0,
-    credit: 59.5,
-  },
-  {
-    id: "jl-104",
-    branchId: "demo-branch",
-    entryDate: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10),
-    accountName: "5010 - Fresh Produce & Ingredients COGS",
-    accountType: "EXPENSE",
-    description: "Vegetables & Dairy Inward Delivery",
-    reference: "VEND-8821",
-    debit: 480.0,
-    credit: 0.0,
-  },
-  {
-    id: "jl-105",
-    branchId: "demo-branch",
-    entryDate: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10),
-    accountName: "2020 - Accounts Payable (Suppliers)",
-    accountType: "LIABILITY",
-    description: "Vendor Invoice Payable Net 15",
-    reference: "VEND-8821",
-    debit: 0.0,
-    credit: 480.0,
-  },
-  {
-    id: "jl-106",
-    branchId: "demo-branch",
-    entryDate: new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10),
-    accountName: "6010 - Restaurant Premises Rent",
-    accountType: "EXPENSE",
-    description: "Monthly Property Lease Amortization",
-    reference: "LEASE-NOV",
-    debit: 2500.0,
-    credit: 0.0,
-  },
-  {
-    id: "jl-107",
-    branchId: "demo-branch",
-    entryDate: new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10),
-    accountName: "1020 - Operating Bank Account",
-    accountType: "ASSET",
-    description: "Direct Bank Transfer for Store Lease",
-    reference: "LEASE-NOV",
-    debit: 0.0,
-    credit: 2500.0,
-  },
-];
+const memoryLedger: JournalEntry[] = [];
 
 export async function GET(req: Request) {
   const user = await getServerSessionUser();
@@ -145,6 +67,59 @@ export async function GET(req: Request) {
         debit: 0.0,
         credit: amt,
       });
+    });
+
+    const { data: orders } = await admin
+      .from("orders")
+      .select("id, order_number, total_amount, subtotal, tax_amount, created_at")
+      .eq("branch_id", branchId)
+      .in("status", ["PAID", "COMPLETED", "DELIVERED"])
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    (orders || []).forEach((o: any) => {
+      const tot = Number(o.total_amount || 0);
+      const sub = Number(o.subtotal || tot * 0.95);
+      const tax = Number(o.tax_amount || tot - sub);
+      const date = (o.created_at || "").slice(0, 10);
+
+      dynamicEntries.push({
+        id: `ord-deb-${o.id}`,
+        branchId,
+        entryDate: date,
+        accountName: "1010 - Till & Drawer Cash",
+        accountType: "ASSET",
+        description: `Collections from Order #${o.order_number}`,
+        reference: `ORD-${o.order_number}`,
+        debit: tot,
+        credit: 0.0,
+      });
+
+      dynamicEntries.push({
+        id: `ord-rev-${o.id}`,
+        branchId,
+        entryDate: date,
+        accountName: "4010 - Food & Beverage Revenue",
+        accountType: "REVENUE",
+        description: `Sales recognition for Order #${o.order_number}`,
+        reference: `ORD-${o.order_number}`,
+        debit: 0.0,
+        credit: sub,
+      });
+
+      if (tax > 0) {
+        dynamicEntries.push({
+          id: `ord-tax-${o.id}`,
+          branchId,
+          entryDate: date,
+          accountName: "2010 - Sales Tax / GST Payable",
+          accountType: "LIABILITY",
+          description: `GST liability for Order #${o.order_number}`,
+          reference: `ORD-${o.order_number}`,
+          debit: 0.0,
+          credit: tax,
+        });
+      }
     });
   } catch {
     // ignore

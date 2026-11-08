@@ -14,8 +14,8 @@ export async function GET(req: Request) {
 
   const admin = createAdminClient();
 
-  // 1. Calculate Inventory Value
-  let inventoryValue = 3850.0;
+  // 1. Calculate Real Inventory Value
+  let inventoryValue = 0;
   try {
     const { data: ingredients } = await admin
       .from("ingredients")
@@ -27,35 +27,58 @@ export async function GET(req: Request) {
         const cost = Number(ing.cost_per_unit || ing.cost_per_kg || 0);
         return sum + Number(ing.current_stock || 0) * cost;
       }, 0);
-      if (computed > 0) inventoryValue = Math.round(computed * 100) / 100;
+      inventoryValue = Math.round(computed * 100) / 100;
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.error("Balance sheet inventory error:", err);
   }
 
-  // 2. Calculate Cash in Registers & Till Float
-  let cashInTill = 850.0;
+  // 2. Real Cash and Bank from Orders & Payments
+  let cashInTill = 0;
+  let bankBalance = 0;
+  let taxPayable = 0;
+  let openReceivables = 0;
+
   try {
-    const { data: closings } = await admin
-      .from("cash_closings")
-      .select("counted_cash, expected_cash")
+    const { data: payments } = await admin
+      .from("payments")
+      .select("amount, method, created_at, orders!inner(branch_id)")
+      .eq("orders.branch_id", branchId)
+      .lte("created_at", `${asOf}T23:59:59.999Z`);
+
+    const { data: expenses } = await admin
+      .from("expenses")
+      .select("amount, paid_from_cash")
       .eq("branch_id", branchId)
-      .order("business_date", { ascending: false })
-      .limit(1);
+      .lte("spent_on", asOf);
 
-    if (closings && closings.length > 0) {
-      cashInTill = Number(closings[0].counted_cash || closings[0].expected_cash || 850);
-    }
-  } catch {
-    // fallback
-  }
+    let totalCashIn = 0;
+    let totalDigitalIn = 0;
 
-  // 3. Operating Bank Account & Settlements
-  let bankBalance = 14250.0;
-  let taxPayable = 620.0;
-  let openReceivables = 420.0;
+    (payments || []).forEach((p: any) => {
+      const amt = Number(p.amount || 0);
+      if ((p.method || "").toUpperCase() === "CASH") {
+        totalCashIn += amt;
+      } else {
+        totalDigitalIn += amt;
+      }
+    });
 
-  try {
+    let totalCashOut = 0;
+    let totalDigitalOut = 0;
+
+    (expenses || []).forEach((e: any) => {
+      const amt = Number(e.amount || 0);
+      if (e.paid_from_cash) {
+        totalCashOut += amt;
+      } else {
+        totalDigitalOut += amt;
+      }
+    });
+
+    cashInTill = Math.max(0, Math.round((totalCashIn - totalCashOut) * 100) / 100);
+    bankBalance = Math.max(0, Math.round((totalDigitalIn - totalDigitalOut) * 100) / 100);
+
     const { data: orders } = await admin
       .from("orders")
       .select("total_amount, tax_amount, status")
@@ -63,25 +86,22 @@ export async function GET(req: Request) {
       .lte("created_at", `${asOf}T23:59:59.999Z`);
 
     if (orders && orders.length > 0) {
-      const totalPaid = orders
-        .filter((o: any) => o.status === "COMPLETED" || o.status === "DELIVERED")
-        .reduce((sum: number, o: any) => sum + Number(o.total_amount || 0), 0);
       const totalTax = orders
+        .filter((o: any) => o.status === "COMPLETED" || o.status === "DELIVERED" || o.status === "PAID")
         .reduce((sum: number, o: any) => sum + Number(o.tax_amount || 0), 0);
       const unpaid = orders
-        .filter((o: any) => o.status === "PENDING" || o.status === "PREPARING" || o.status === "READY")
+        .filter((o: any) => o.status === "OPEN" || o.status === "PENDING")
         .reduce((sum: number, o: any) => sum + Number(o.total_amount || 0), 0);
 
-      bankBalance = Math.round((8000 + totalPaid * 0.6) * 100) / 100;
-      taxPayable = Math.round((totalTax * 0.4) * 100) / 100;
+      taxPayable = Math.round(totalTax * 100) / 100;
       openReceivables = Math.round(unpaid * 100) / 100;
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.error("Balance sheet balances error:", err);
   }
 
-  // 4. Accounts Payable & Accruals
-  let accountsPayable = 2150.0;
+  // 3. Accounts Payable from unpaid expenses
+  let accountsPayable = 0;
   try {
     const { data: exp } = await admin
       .from("expenses")
@@ -90,43 +110,67 @@ export async function GET(req: Request) {
       .eq("paid_from_cash", false);
 
     if (exp && exp.length > 0) {
-      const recentUnpaid = exp.slice(0, 5).reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0);
-      if (recentUnpaid > 0) accountsPayable = Math.round(recentUnpaid * 100) / 100;
+      const unpaidExp = exp.reduce((sum: number, e: any) => sum + Number(e.amount || 0), 0);
+      accountsPayable = Math.round(unpaidExp * 100) / 100;
     }
   } catch {
-    // fallback
+    //
   }
 
-  const equipmentValue = 18500.0; // Kitchen assets, POS terminals, espresso machinery
-  const staffPayrollAccrued = 1450.0;
+  const equipmentValue = 0; // recorded when user logs capital assets
 
-  const assets = [
-    { label: "Cash in Till & Floats", amount: cashInTill },
+  // Assets
+  const currentAssets = [
+    { label: "Cash in Register & Drawer Till", amount: cashInTill },
     { label: "Operating Bank Account", amount: bankBalance },
-    { label: "Accounts Receivable (Open Tabs & Deliveries)", amount: openReceivables },
-    { label: "Raw Ingredient & Beverage Inventory", amount: inventoryValue },
-    { label: "Kitchen Equipment & POS Hardware (Net Book Value)", amount: equipmentValue },
+    { label: "Inventory on Hand (Ingredients & Stock)", amount: inventoryValue },
+    ...(openReceivables > 0 ? [{ label: "Accounts Receivable (Open Dining Orders)", amount: openReceivables }] : []),
   ];
+  const nonCurrentAssets: { label: string; amount: number }[] = equipmentValue > 0
+    ? [{ label: "Kitchen Equipment & POS Hardware", amount: equipmentValue }]
+    : [];
 
-  const totalAssets = assets.reduce((sum, a) => sum + a.amount, 0);
+  const totalCurrentAssets = currentAssets.reduce((s, a) => s + a.amount, 0);
+  const totalNonCurrentAssets = nonCurrentAssets.reduce((s, a) => s + a.amount, 0);
+  const totalAssets = Math.round((totalCurrentAssets + totalNonCurrentAssets) * 100) / 100;
 
-  const liabilities = [
-    { label: "Accounts Payable (Vendor & Supplier Invoices)", amount: accountsPayable },
-    { label: "Sales Tax / GST Payable (Collected Unremitted)", amount: taxPayable },
-    { label: "Accrued Staff Payroll & Gratuities", amount: staffPayrollAccrued },
+  // Liabilities
+  const currentLiabilities = [
+    ...(accountsPayable > 0 ? [{ label: "Accounts Payable (Vendor Bills)", amount: accountsPayable }] : []),
+    ...(taxPayable > 0 ? [{ label: "Sales Tax / GST Output Liability", amount: taxPayable }] : []),
   ];
+  const nonCurrentLiabilities: { label: string; amount: number }[] = [];
 
-  const totalLiabilities = liabilities.reduce((sum, l) => sum + l.amount, 0);
-  const equity = Math.round((totalAssets - totalLiabilities) * 100) / 100;
+  const totalCurrentLiabilities = currentLiabilities.reduce((s, l) => s + l.amount, 0);
+  const totalNonCurrentLiabilities = nonCurrentLiabilities.reduce((s, l) => s + l.amount, 0);
+  const totalLiabilities = Math.round((totalCurrentLiabilities + totalNonCurrentLiabilities) * 100) / 100;
+
+  // Equity
+  const totalEquity = Math.round((totalAssets - totalLiabilities) * 100) / 100;
+  const equityItems = [
+    { label: "Retained Earnings / Operating Surplus", amount: totalEquity },
+  ];
 
   return NextResponse.json({
-    asOf,
-    assets,
-    liabilities,
-    totalAssets: Math.round(totalAssets * 100) / 100,
-    totalLiabilities: Math.round(totalLiabilities * 100) / 100,
-    equity,
-    note: `Balance sheet compiled automatically from POS cash drawers, ingredient stock records, and vendor liabilities as of ${asOf}. Retained earnings and assets balance with owner's equity.`,
+    asOfDate: asOf,
+    assets: {
+      current: currentAssets,
+      nonCurrent: nonCurrentAssets,
+      totalCurrent: totalCurrentAssets,
+      totalNonCurrent: totalNonCurrentAssets,
+      total: totalAssets,
+    },
+    liabilities: {
+      current: currentLiabilities,
+      nonCurrent: nonCurrentLiabilities,
+      totalCurrent: totalCurrentLiabilities,
+      totalNonCurrent: totalNonCurrentLiabilities,
+      total: totalLiabilities,
+    },
+    equity: {
+      items: equityItems,
+      total: totalEquity,
+    },
+    totalLiabilitiesAndEquity: Math.round((totalLiabilities + totalEquity) * 100) / 100,
   });
 }
-
