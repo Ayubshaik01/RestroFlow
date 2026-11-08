@@ -22,6 +22,17 @@ export interface DashboardSummary {
     totalAmount: string;
     billedAt: string;
   }[];
+  avgOrderValue?: number;
+  totalCustomers?: number;
+  pendingOrders?: number;
+  inProgressOrders?: number;
+  completedOrders?: number;
+  totalTables?: number;
+  popularItems?: {
+    name: string;
+    quantity: number;
+    revenue: number;
+  }[];
 }
 
 export function useDashboardSummary(branchId: string | null) {

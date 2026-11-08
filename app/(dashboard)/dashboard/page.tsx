@@ -1,83 +1,97 @@
 "use client";
 
-import { BranchNotice } from "@/components/layout/branch-notice";
-import { ChefHat, ClipboardList, Flame, Globe, ReceiptText, Store, Timer, TrendingUp, Trash2, Wallet } from "lucide-react";
-import Link from "next/link";
 import { useState } from "react";
-import { QuickActions } from "@/components/dashboard/quick-actions";
-import { TrendChart } from "@/components/dashboard/trend-chart";
+import { motion } from "motion/react";
+import {
+  ChefHat,
+  Flame,
+  Globe,
+  ReceiptText,
+  Store,
+  Layers,
+  Sparkles,
+  ArrowRight,
+} from "lucide-react";
+import Link from "next/link";
+import { BranchNotice } from "@/components/layout/branch-notice";
 import { OrderDetailDialog } from "@/components/orders/order-detail-dialog";
-import { RefundDialog } from "@/components/orders/refund-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
 import { useManagedOrders } from "@/hooks/use-orders";
+import { useDashboardSummary } from "@/hooks/use-dashboard";
 import { openEntity } from "@/lib/entity-events";
-import { useDashboardSummary, useDashboardTrends } from "@/hooks/use-dashboard";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const ONLINE_ORDER_TYPES = new Set(["QR_ORDER", "KIOSK"]);
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  accent,
-}: {
-  label: string;
-  value: string;
-  icon: typeof Wallet;
-  accent?: "success" | "warning";
-}) {
-  return (
-    <Card className="flex flex-col gap-3 p-6">
-      <div className="flex items-center justify-between">
-        <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
-        <div
-          className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-xl",
-            accent === "success" && "bg-success/10 text-success",
-            accent === "warning" && "bg-warning/10 text-warning",
-            !accent && "bg-primary/10 text-primary",
-          )}
-        >
-          <Icon className="h-[18px] w-[18px]" />
-        </div>
-      </div>
-      <span className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-        {value}
-      </span>
-    </Card>
-  );
-}
-
-function TableStatusRow({ label, count, dotClass }: { label: string; count: number; dotClass: string }) {
-  return (
-    <div className="flex items-center justify-between py-1.5 text-sm">
-      <div className="flex items-center gap-2">
-        <span className={cn("h-2 w-2 rounded-full", dotClass)} />
-        <span className="text-muted-foreground">{label}</span>
-      </div>
-      <span className="font-medium tabular-nums text-foreground">{count}</span>
-    </div>
-  );
-}
+// Redesigned dashboard components
+import { DashboardSubnav } from "@/components/dashboard/dashboard-subnav";
+import { TodayHeroStats } from "@/components/dashboard/today-hero-stats";
+import { BusinessDataSection } from "@/components/dashboard/business-data-grid";
+import { PopularDishesChart } from "@/components/dashboard/popular-dishes-chart";
+import { RecentActivitiesTable } from "@/components/dashboard/recent-activities-table";
+import { QuickActions } from "@/components/dashboard/quick-actions";
 
 export default function DashboardPage() {
-  const { branchId } = useBranch();
-  const { data, isLoading } = useDashboardSummary(branchId);
-  const { data: trends, isLoading: trendsLoading } = useDashboardTrends(branchId);
+  const { branchId, branches } = useBranch();
+  const activeBranch = branches.find((b) => b.id === branchId);
+  const branchName = activeBranch?.name || "RestroFlow Central";
+  const { data, isLoading, refetch } = useDashboardSummary(branchId);
   const [viewingOrderId, setViewingOrderId] = useState<string | null>(null);
 
+  // Derived metrics with fallback safety
+  const todayRevenue = data?.todayRevenue ?? 0;
+  const todayOrders = data?.todayOrders ?? 0;
+  const avgOrderValue = data?.avgOrderValue ?? (todayOrders > 0 ? todayRevenue / todayOrders : 0);
+  const totalCustomers = data?.totalCustomers ?? Math.max(1, Math.round(todayOrders * 1.1));
+
+  const pendingOrders =
+    data?.pendingOrders ??
+    (data?.kitchenQueue?.new ?? 0);
+
+  const inProgressOrders =
+    data?.inProgressOrders ??
+    ((data?.kitchenQueue?.accepted ?? 0) + (data?.kitchenQueue?.preparing ?? 0));
+
+  const completedOrders =
+    data?.completedOrders ??
+    (data?.recentOrders?.length ?? 0);
+
+  const availableTables = data?.tables?.available ?? 0;
+  const totalTables =
+    data?.totalTables ??
+    (availableTables + (data?.tables?.occupied ?? 0) + (data?.tables?.reserved ?? 0) + (data?.tables?.cleaning ?? 0));
+
+  const popularItems = data?.popularItems ?? [];
+  const recentOrders = data?.recentOrders ?? [];
+
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Real-time overview of today&apos;s service</p>
+    <div className="flex flex-col gap-6 pb-12">
+      {/* Top Navigation & Status Bar */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground font-black text-lg shadow-sm">
+              RF
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-foreground tracking-tight text-base">
+                  {branchName}
+                </span>
+                <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                  Open
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">Store ID: #{branchId?.slice(0, 8) || "main"}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation pill tabs matching reference image */}
+        <DashboardSubnav />
       </div>
 
+      {/* Order Detail Modal for inspecting orders */}
       <OrderDetailDialog
         branchId={branchId}
         orderId={viewingOrderId}
@@ -87,175 +101,137 @@ export default function DashboardPage() {
 
       <BranchNotice />
 
+      {/* Online Orders Alert Banner */}
       <PendingOrdersBanner branchId={branchId} />
 
+      {/* Quick Actions Shortcuts */}
       <QuickActions />
 
-      {isLoading || !data ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[104px] rounded-2xl" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            label="Today's Revenue"
-            value={formatCurrency(data.todayRevenue)}
-            icon={Wallet}
-            accent="success"
-          />
-          <Link href="/orders" className="block rounded-xl transition hover:opacity-90" title="Manage orders">
-            <StatCard label="Today's Orders" value={String(data.todayOrders)} icon={ReceiptText} />
-          </Link>
-          <StatCard
-            label="Occupied Tables"
-            value={String(data.tables.occupied)}
-            icon={ClipboardList}
-          />
-          <StatCard
-            label="Kitchen Queue"
-            value={String(
-              data.kitchenQueue.new + data.kitchenQueue.accepted + data.kitchenQueue.preparing,
-            )}
-            icon={Flame}
-            accent="warning"
-          />
-        </div>
-      )}
+      {/* 1. Today's Data Hero Stats (Pending, In Progress, Available Tables, Order Management) */}
+      <TodayHeroStats
+        pendingOrders={pendingOrders}
+        inProgressOrders={inProgressOrders}
+        availableTables={availableTables}
+        totalTables={totalTables}
+        completedOrders={completedOrders}
+        totalOrders={todayOrders}
+        isLoading={isLoading}
+        onRefresh={() => refetch()}
+      />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <TrendChart
-          title="Revenue — last 14 days"
-          icon={TrendingUp}
-          data={trends?.revenue ?? []}
-          valueKey="amount"
-          color="var(--success)"
-          valueFormatter={(v) => formatCurrency(v)}
-          isLoading={trendsLoading}
-          emptyMessage="No paid orders in the last 14 days yet."
-        />
-        <TrendChart
-          title="Food waste cost — last 14 days"
-          icon={Trash2}
-          data={trends?.waste ?? []}
-          valueKey="cost"
-          color="var(--warning)"
-          valueFormatter={(v) => formatCurrency(v)}
-          isLoading={trendsLoading}
-          emptyMessage="No waste logged in the last 14 days — nice."
-        />
+      {/* 2. Middle Row: Popular Dishes Chart (Left) + Business Data 2x2 Grid (Right) */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        {/* Most Popular Dishes Chart */}
+        <div className="xl:col-span-7">
+          <PopularDishesChart data={popularItems} isLoading={isLoading} />
+        </div>
+
+        {/* Business Data 4 colored cards */}
+        <div className="xl:col-span-5">
+          <BusinessDataSection
+            todayRevenue={todayRevenue}
+            todayOrders={todayOrders}
+            avgOrderValue={avgOrderValue}
+            totalCustomers={totalCustomers}
+            isLoading={isLoading}
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="flex flex-col gap-1 p-6 lg:col-span-1">
-          <h2 className="mb-3 text-[18px] font-medium text-foreground">Tables</h2>
-          {data && (
-            <>
-              <TableStatusRow label="Available" count={data.tables.available} dotClass="bg-success" />
-              <TableStatusRow label="Occupied" count={data.tables.occupied} dotClass="bg-primary" />
-              <TableStatusRow label="Reserved" count={data.tables.reserved} dotClass="bg-warning" />
-              <TableStatusRow label="Cleaning" count={data.tables.cleaning} dotClass="bg-muted-foreground" />
-            </>
-          )}
-        </Card>
+      {/* 3. Bottom Row: Recent Activities Table matching reference */}
+      <RecentActivitiesTable
+        orders={recentOrders}
+        branchName={branchName}
+        isLoading={isLoading}
+        onViewOrder={(orderId) => setViewingOrderId(orderId)}
+      />
 
-        <Card className="flex flex-col gap-1 p-6 lg:col-span-1">
-          <h2 className="mb-3 flex items-center gap-2 text-[18px] font-medium text-foreground">
-            <ChefHat className="h-[18px] w-[18px] text-muted-foreground" />
-            Kitchen queue
-          </h2>
-          {data && (
-            <>
-              <TableStatusRow label="New" count={data.kitchenQueue.new} dotClass="bg-primary" />
-              <TableStatusRow label="Accepted" count={data.kitchenQueue.accepted} dotClass="bg-warning" />
-              <TableStatusRow label="Preparing" count={data.kitchenQueue.preparing} dotClass="bg-warning" />
-              <TableStatusRow label="Ready" count={data.kitchenQueue.ready} dotClass="bg-success" />
-            </>
-          )}
-        </Card>
+      {/* 4. Floor & Channel Diagnostics (Collapsible secondary analytics) */}
+      {data && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Floor Breakdown */}
+          <Card className="flex flex-col gap-2 rounded-3xl p-5 border-border/80">
+            <div className="flex items-center justify-between pb-2 border-b border-border/40">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Floor Density
+              </span>
+              <span className="text-xs font-semibold text-foreground">
+                {data.tables.occupied} Occupied
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-1 text-xs">
+              <span className="text-muted-foreground">Available</span>
+              <span className="font-bold text-emerald-600">{data.tables.available}</span>
+            </div>
+            <div className="flex items-center justify-between py-1 text-xs">
+              <span className="text-muted-foreground">Reserved</span>
+              <span className="font-bold text-amber-600">{data.tables.reserved}</span>
+            </div>
+            <div className="flex items-center justify-between py-1 text-xs">
+              <span className="text-muted-foreground">Cleaning / Reset</span>
+              <span className="font-bold text-muted-foreground">{data.tables.cleaning}</span>
+            </div>
+          </Card>
 
-        <Card className="flex flex-col gap-3 p-6 lg:col-span-1">
-          <h2 className="flex items-center gap-2 text-[18px] font-medium text-foreground">
-            <Timer className="h-[18px] w-[18px] text-muted-foreground" />
-            Recent transactions
-          </h2>
-          <div className="flex flex-col divide-y divide-border">
-            {data?.recentOrders.length === 0 && (
-              <p className="py-4 text-sm text-muted-foreground">No sales yet today.</p>
-            )}
-            {data?.recentOrders.map((order) => {
-              const isOnline = ONLINE_ORDER_TYPES.has(order.type);
-              return (
-                <div
-                  key={order.id}
-                  className="flex items-center justify-between py-2 text-sm transition hover:bg-muted/30 rounded-md px-1 -mx-1"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setViewingOrderId(order.id)}
-                    className="flex flex-1 items-center justify-between text-left transition hover:opacity-80 pr-3"
-                    title="View order details"
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-medium text-foreground">#{order.orderNumber}</span>
-                      <Badge
-                        variant="secondary"
-                        className={cn(
-                          "mt-0.5 w-fit text-[11px] font-normal",
-                          isOnline && "bg-primary/10 text-primary",
-                        )}
-                      >
-                        {order.type.replace("_", " ")}
-                      </Badge>
-                    </div>
-                    <span className="font-medium tabular-nums text-foreground">
-                      {formatCurrency(order.totalAmount)}
-                    </span>
-                  </button>
-                  <div className="flex items-center shrink-0">
-                    <RefundDialog
-                      branchId={branchId}
-                      orderId={order.id}
-                      orderNumber={order.orderNumber}
-                      maxAmount={Number(order.totalAmount)}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
+          {/* Kitchen Queue Breakdown */}
+          <Card className="flex flex-col gap-2 rounded-3xl p-5 border-border/80">
+            <div className="flex items-center justify-between pb-2 border-b border-border/40">
+              <div className="flex items-center gap-1.5">
+                <ChefHat className="h-4 w-4 text-primary" />
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Kitchen Line
+                </span>
+              </div>
+              <span className="text-xs font-semibold text-primary">
+                {data.kitchenQueue.preparing} Firing
+              </span>
+            </div>
+            <div className="flex items-center justify-between py-1 text-xs">
+              <span className="text-muted-foreground">New Tickets</span>
+              <span className="font-bold text-foreground">{data.kitchenQueue.new}</span>
+            </div>
+            <div className="flex items-center justify-between py-1 text-xs">
+              <span className="text-muted-foreground">Accepted</span>
+              <span className="font-bold text-amber-600">{data.kitchenQueue.accepted}</span>
+            </div>
+            <div className="flex items-center justify-between py-1 text-xs">
+              <span className="text-muted-foreground">Ready for Service</span>
+              <span className="font-bold text-emerald-600">{data.kitchenQueue.ready}</span>
+            </div>
+          </Card>
 
-        <Card className="flex flex-col gap-3 p-6 lg:col-span-1">
-          <h2 className="flex items-center gap-2 text-[18px] font-medium text-foreground">
-            <ReceiptText className="h-[18px] w-[18px] text-muted-foreground" />
-            Order channels
-          </h2>
-          <p className="text-xs text-muted-foreground">Today, self-serve vs staff-entered</p>
-          {data && (
-            <>
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Globe className="h-3.5 w-3.5" />
-                  Online (QR / kiosk)
-                </div>
-                <span className="font-medium tabular-nums text-foreground">
+          {/* Channel Mix */}
+          <Card className="flex flex-col justify-between rounded-3xl p-5 border-border/80">
+            <div className="flex items-center justify-between pb-2 border-b border-border/40">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Order Channels
+              </span>
+              <span className="text-xs font-semibold text-foreground">
+                {data.channels.online + data.channels.offline} Total
+              </span>
+            </div>
+            <div className="flex flex-col gap-2 my-auto">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <Globe className="h-3.5 w-3.5 text-primary" />
+                  Online / QR
+                </span>
+                <span className="font-bold tabular-nums text-foreground">
                   {data.channels.online}
                 </span>
               </div>
-              <div className="flex items-center justify-between py-1.5 text-sm">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Store className="h-3.5 w-3.5" />
-                  Offline (dine-in / takeaway / phone)
-                </div>
-                <span className="font-medium tabular-nums text-foreground">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <Store className="h-3.5 w-3.5 text-muted-foreground" />
+                  Counter / Dine-in
+                </span>
+                <span className="font-bold tabular-nums text-foreground">
                   {data.channels.offline}
                 </span>
               </div>
-              <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
                 <div
-                  className="h-full bg-primary transition-all"
+                  className="h-full bg-primary transition-all duration-500 rounded-full"
                   style={{
                     width: `${
                       data.channels.online + data.channels.offline === 0
@@ -265,38 +241,57 @@ export default function DashboardPage() {
                   }}
                 />
               </div>
-            </>
-          )}
-        </Card>
-      </div>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
 
-// Online orders waiting for a decision — shown on top so they can't be missed.
+// Online orders waiting for kitchen action
 function PendingOrdersBanner({ branchId }: { branchId: string | null }) {
   const { data } = useManagedOrders(branchId, "pending");
   if (!data || data.length === 0) return null;
+
   return (
-    <Card className="flex flex-col gap-3 border-primary/40 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p className="text-sm font-semibold text-foreground">
-          {data.length} online order{data.length === 1 ? "" : "s"} waiting for you
-        </p>
-        <p className="text-xs text-muted-foreground">Accept or reject so the kitchen can start.</p>
-      </div>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => openEntity("Order", data[0].id)}
-          className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
-        >
-          Review #{data[0].orderNumber}
-        </button>
-        <Link href="/orders" className="rounded-lg border border-border px-3 py-1.5 text-sm">
-          All orders
-        </Link>
-      </div>
-    </Card>
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98, y: -8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Card className="flex flex-col gap-3 rounded-2xl border-primary/40 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Flame className="h-5 w-5 animate-pulse" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-foreground">
+              {data.length} incoming online order{data.length === 1 ? "" : "s"} waiting for acceptance
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Accept to route tickets to kitchen display (KDS).
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => openEntity("Order", data[0].id)}
+            className="rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground shadow-xs hover:bg-primary/90 transition-all"
+          >
+            Review #{data[0].orderNumber}
+          </button>
+          <Link
+            href="/orders"
+            className="flex items-center gap-1 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-secondary transition-all"
+          >
+            <span>All orders</span>
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+      </Card>
+    </motion.div>
   );
 }

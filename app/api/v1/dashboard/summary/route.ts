@@ -15,25 +15,50 @@ export async function GET(req: Request) {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  // 1. Fetch today's orders
+  // 1. Fetch today's orders (include customer_name, customer_phone for distinct customer count)
   const { data: todayOrders } = await admin
     .from("orders")
-    .select("id, order_number, type, status, total_amount, created_at")
+    .select("id, order_number, type, status, total_amount, created_at, customer_name, customer_phone")
     .eq("branch_id", branchId)
     .gte("created_at", todayStart.toISOString());
 
-  const paidOrders = (todayOrders || []).filter((o) => o.status === "PAID");
-  const todayRevenue = paidOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
-  const totalTodayOrders = (todayOrders || []).length;
+  const allOrders = todayOrders || [];
 
-  const onlineCount = (todayOrders || []).filter((o) => o.type !== "DINE_IN").length;
-  const offlineCount = (todayOrders || []).filter((o) => o.type === "DINE_IN").length;
+  const paidOrders = allOrders.filter((o) => o.status === "PAID");
+  const todayRevenue = paidOrders.reduce((sum, o) => sum + Number(o.total_amount), 0);
+  const totalTodayOrders = allOrders.length;
+
+  const onlineCount = allOrders.filter((o) => o.type !== "DINE_IN").length;
+  const offlineCount = allOrders.filter((o) => o.type === "DINE_IN").length;
+
+  // New: Average order value
+  const avgOrderValue = paidOrders.length > 0 ? todayRevenue / paidOrders.length : 0;
+
+  // New: Total distinct customers (by customer_name or customer_phone)
+  const customerSet = new Set<string>();
+  allOrders.forEach((o: any) => {
+    const identifier = o.customer_phone || o.customer_name;
+    if (identifier) customerSet.add(identifier);
+  });
+  const totalCustomers = customerSet.size;
+
+  // New: Order status breakdowns
+  const pendingStatuses = new Set(["NEW", "PENDING", "PLACED"]);
+  const inProgressStatuses = new Set(["ACCEPTED", "PREPARING", "IN_PROGRESS"]);
+  const completedStatuses = new Set(["PAID", "COMPLETED", "DELIVERED"]);
+
+  const pendingOrders = allOrders.filter((o) => pendingStatuses.has(o.status)).length;
+  const inProgressOrders = allOrders.filter((o) => inProgressStatuses.has(o.status)).length;
+  const completedOrders = allOrders.filter((o) => completedStatuses.has(o.status)).length;
 
   // 2. Fetch tables status count
   const { data: tables } = await admin
     .from("tables")
     .select("id, status, floors!inner(branch_id)")
     .eq("floors.branch_id", branchId);
+
+  const allTables = tables || [];
+  const totalTables = allTables.length;
 
   const tableCounts = {
     available: 0,
@@ -43,7 +68,7 @@ export async function GET(req: Request) {
     outOfService: 0,
   };
 
-  (tables || []).forEach((t: any) => {
+  allTables.forEach((t: any) => {
     if (t.status === "AVAILABLE") tableCounts.available++;
     else if (t.status === "OCCUPIED") tableCounts.occupied++;
     else if (t.status === "RESERVED") tableCounts.reserved++;
@@ -67,7 +92,7 @@ export async function GET(req: Request) {
   });
 
   // 4. Recent orders
-  const recentOrders = (todayOrders || [])
+  const recentOrders = allOrders
     .slice(0, 5)
     .map((o) => ({
       id: o.id,
@@ -77,6 +102,42 @@ export async function GET(req: Request) {
       billedAt: o.created_at,
     }));
 
+  // 5. Popular items — top 10 by quantity from kot_items joined with menu_items
+  let popularItems: { name: string; quantity: number; revenue: number }[] = [];
+  try {
+    const { data: kotItems } = await admin
+      .from("kot_items")
+      .select("quantity, price, menu_items!inner(name), kots!inner(orders!inner(branch_id, created_at))")
+      .eq("kots.orders.branch_id", branchId)
+      .gte("kots.orders.created_at", todayStart.toISOString());
+
+    if (kotItems && kotItems.length > 0) {
+      const itemMap = new Map<string, { quantity: number; revenue: number }>();
+
+      kotItems.forEach((item: any) => {
+        const name = item.menu_items?.name || "Unknown";
+        const qty = Number(item.quantity) || 0;
+        const rev = qty * (Number(item.price) || 0);
+
+        if (itemMap.has(name)) {
+          const existing = itemMap.get(name)!;
+          existing.quantity += qty;
+          existing.revenue += rev;
+        } else {
+          itemMap.set(name, { quantity: qty, revenue: rev });
+        }
+      });
+
+      popularItems = Array.from(itemMap.entries())
+        .map(([name, data]) => ({ name, quantity: data.quantity, revenue: data.revenue }))
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 10);
+    }
+  } catch {
+    // If the join fails, return empty array — handled gracefully on frontend
+    popularItems = [];
+  }
+
   return NextResponse.json({
     todayRevenue,
     todayOrders: totalTodayOrders,
@@ -84,6 +145,12 @@ export async function GET(req: Request) {
     tables: tableCounts,
     kitchenQueue,
     recentOrders,
+    avgOrderValue,
+    totalCustomers,
+    pendingOrders,
+    inProgressOrders,
+    completedOrders,
+    totalTables,
+    popularItems,
   });
 }
-
