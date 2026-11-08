@@ -1468,7 +1468,7 @@ export function TaxAuditTab({ branchId }: { branchId: string | null }) {
           <Card className="p-4">
             <p className="text-xs text-muted-foreground font-medium">Output Tax (Sales)</p>
             <p className="text-xl font-bold tabular-nums text-foreground mt-1">
-              {formatCurrency(data.outputTax.totalOutputTax)}
+              {formatCurrency(data.outputTax?.totalOutputTax ?? 0)}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Collected on customer bills</p>
           </Card>
@@ -1476,7 +1476,7 @@ export function TaxAuditTab({ branchId }: { branchId: string | null }) {
           <Card className="p-4">
             <p className="text-xs text-muted-foreground font-medium">Input Tax Credit (ITC)</p>
             <p className="text-xl font-bold tabular-nums text-emerald-600 mt-1">
-              {formatCurrency(data.inputTaxCredit.totalItc)}
+              {formatCurrency(data.inputTaxCredit?.totalItc ?? 0)}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Offset from vendor invoices</p>
           </Card>
@@ -1484,7 +1484,7 @@ export function TaxAuditTab({ branchId }: { branchId: string | null }) {
           <Card className="p-4 border-l-4 border-l-primary">
             <p className="text-xs text-muted-foreground font-medium">Net Tax Due to Govt</p>
             <p className="text-xl font-bold tabular-nums text-primary mt-1">
-              {formatCurrency(data.settlement.netPayable)}
+              {formatCurrency(data.settlement?.netPayable ?? 0)}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Output Tax − Inward ITC</p>
           </Card>
@@ -1492,7 +1492,7 @@ export function TaxAuditTab({ branchId }: { branchId: string | null }) {
           <Card className="p-4">
             <p className="text-xs text-muted-foreground font-medium">Next Filing Deadline</p>
             <p className="text-base font-semibold text-foreground mt-1">
-              {data.settlement.dueDate}
+              {data.settlement?.dueDate || "20th of next month"}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">Monthly GSTR-3B / Sales Tax</p>
           </Card>
@@ -1515,7 +1515,7 @@ export function TaxAuditTab({ branchId }: { branchId: string | null }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {data.outputTax.rates.map((r) => (
+                {(data.outputTax?.rates || []).map((r) => (
                   <tr key={r.rate}>
                     <td className="py-2 text-foreground font-medium">{r.rate}</td>
                     <td className="py-2 text-right tabular-nums text-foreground">{formatCurrency(r.tax)}</td>
@@ -1524,7 +1524,7 @@ export function TaxAuditTab({ branchId }: { branchId: string | null }) {
                 <tr className="font-bold border-t-2 border-border">
                   <td className="py-2">Gross Output Tax</td>
                   <td className="py-2 text-right tabular-nums text-foreground">
-                    {formatCurrency(data.outputTax.totalOutputTax)}
+                    {formatCurrency(data.outputTax?.totalOutputTax ?? 0)}
                   </td>
                 </tr>
               </tbody>
@@ -1545,25 +1545,25 @@ export function TaxAuditTab({ branchId }: { branchId: string | null }) {
                 <tr>
                   <td className="py-2 text-foreground font-medium">Raw Ingredients &amp; Supplies</td>
                   <td className="py-2 text-right tabular-nums text-emerald-600">
-                    {formatCurrency(data.inputTaxCredit.supplies)}
+                    {formatCurrency(data.inputTaxCredit?.supplies ?? 0)}
                   </td>
                 </tr>
                 <tr>
                   <td className="py-2 text-foreground font-medium">Eco Packaging &amp; Disposables</td>
                   <td className="py-2 text-right tabular-nums text-emerald-600">
-                    {formatCurrency(data.inputTaxCredit.packaging)}
+                    {formatCurrency(data.inputTaxCredit?.packaging ?? 0)}
                   </td>
                 </tr>
                 <tr>
                   <td className="py-2 text-foreground font-medium">Commercial Kitchen Capital Goods</td>
                   <td className="py-2 text-right tabular-nums text-emerald-600">
-                    {formatCurrency(data.inputTaxCredit.capitalGoods)}
+                    {formatCurrency(data.inputTaxCredit?.capitalGoods ?? 0)}
                   </td>
                 </tr>
                 <tr className="font-bold border-t-2 border-border">
                   <td className="py-2">Total ITC Deductions</td>
                   <td className="py-2 text-right tabular-nums text-emerald-600">
-                    {formatCurrency(data.inputTaxCredit.totalItc)}
+                    {formatCurrency(data.inputTaxCredit?.totalItc ?? 0)}
                   </td>
                 </tr>
               </tbody>
@@ -1587,7 +1587,7 @@ export function TaxAuditTab({ branchId }: { branchId: string | null }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {data.hsnSummary.map((h) => (
+                {(data.hsnSummary || []).map((h) => (
                   <tr key={h.code} className="hover:bg-muted/40 transition-colors">
                     <td className="py-2 pr-3 font-mono font-bold text-foreground">{h.code}</td>
                     <td className="py-2 pr-3 text-muted-foreground">{h.description}</td>
